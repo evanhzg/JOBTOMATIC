@@ -6,12 +6,14 @@ DATA_DIR = BASE_DIR / "data"
 STORAGE_DIR = BASE_DIR / "storage"
 CVS_DIR = STORAGE_DIR / "cvs"
 SCREENSHOTS_DIR = STORAGE_DIR / "screenshots"
+IMPORTED_CV_DIR = STORAGE_DIR / "imported_cv"
 TEMPLATES_DIR = BASE_DIR / "templates"
 DB_PATH = DATA_DIR / "jobhunter.db"
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 CVS_DIR.mkdir(parents=True, exist_ok=True)
 SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
+IMPORTED_CV_DIR.mkdir(parents=True, exist_ok=True)
 TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
 
 class SettingsSchema(BaseModel):

@@ -73,15 +73,15 @@ export const SearchTab: React.FC<SearchTabProps> = ({
   };
 
   return (
-    <div className="max-w-5xl mx-auto py-6 space-y-6">
+    <div className="max-w-5xl mx-auto py-6 space-y-6 font-mono">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-pickle-border pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#242424] pb-4">
         <div>
-          <h2 className="text-xl font-extrabold text-white flex items-center gap-2 font-['Inter_Tight',sans-serif]">
-            <Search className="h-5 w-5 text-pickle-lime" />
-            Cibles de Recherche & Veille Emploi
+          <h2 className="text-xl font-black text-white flex items-center gap-2 uppercase tracking-wider">
+            <Search className="h-5 w-5 text-[#C5EA4B]" />
+            CIBLES DE RECHERCHE & VEILLE EMPLOI
           </h2>
-          <p className="text-xs text-pickle-subtle mt-1">
+          <p className="text-xs text-[#8E8E8E] mt-1">
             Définissez les métiers, contrats (Alternance, Intérim...) et localisations (Rouen) à scanner.
           </p>
         </div>
@@ -89,206 +89,193 @@ export const SearchTab: React.FC<SearchTabProps> = ({
         <button
           onClick={onRunSearchNow}
           disabled={isLoading}
-          className="bg-pickle-lime hover:bg-pickle-limeHover text-pickle-dark font-black px-4 py-2.5 rounded-full text-xs flex items-center gap-2 shadow-lg shadow-pickle-lime/20 active:scale-95 transition-all self-start sm:self-auto"
+          className="bg-[#C5EA4B] hover:bg-[#d6f859] text-black font-black px-4 py-2.5 text-xs flex items-center gap-2 border border-[#C5EA4B] transition-all self-start sm:self-auto"
         >
-          <Play className="h-4 w-4 fill-pickle-dark" />
-          <span>Lancer la recherche maintenant</span>
+          <Play className="h-4 w-4 fill-black" />
+          <span>LANCER LA RECHERCHE MAINTENANT</span>
         </button>
       </div>
 
       {/* Query Creator Card */}
-      <div className="bg-pickle-card border border-pickle-border rounded-3xl p-6 shadow-xl space-y-6">
-        <h3 className="font-extrabold text-sm text-white flex items-center gap-2 font-['Inter_Tight',sans-serif]">
-          <Plus className="h-4 w-4 text-pickle-lime" />
-          Ajouter une nouvelle recherche ciblée
+      <div className="bg-[#141414] border border-[#242424] p-6 space-y-6">
+        <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2 border-b border-[#242424] pb-3">
+          <Plus className="h-4 w-4 text-[#C5EA4B]" /> Ajouter une Nouvelle Requête de Veille
         </h3>
 
-        <form onSubmit={handleAdd} className="space-y-5">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-pickle-subtle mb-1.5">
-                Intitulé ou mots-clés du poste
+        <form onSubmit={handleAdd} className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+            
+            <div className="md:col-span-6 space-y-1">
+              <label className="block text-xs font-bold text-[#8E8E8E] uppercase">
+                Métier / Intitulé Cible :
+              </label>
+              <input
+                type="text"
+                placeholder="Ex: Alternance Développeur Python, Intérim..."
+                value={queryText}
+                onChange={(e) => setQueryText(e.target.value)}
+                className="w-full bg-[#0C0C0C] border border-[#282828] px-3.5 py-2 text-xs text-white focus:outline-none focus:border-[#C5EA4B]"
+                required
+              />
+            </div>
+
+            <div className="md:col-span-4 space-y-1">
+              <label className="block text-xs font-bold text-[#8E8E8E] uppercase">
+                Ville / Zone :
               </label>
               <div className="relative">
-                <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+                <MapPin className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#8E8E8E]" />
                 <input
                   type="text"
-                  placeholder="ex: Alternance Développeur Web, Intérim Logistique..."
-                  value={queryText}
-                  onChange={(e) => setQueryText(e.target.value)}
+                  placeholder="Ex: Rouen, Le Havre..."
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  className="w-full bg-[#0C0C0C] border border-[#282828] pl-9 pr-3.5 py-2 text-xs text-white focus:outline-none focus:border-[#C5EA4B]"
                   required
-                  className="w-full bg-pickle-dark border border-pickle-border rounded-full pl-9 pr-3 py-2 text-xs text-white focus:outline-none focus:border-pickle-lime"
                 />
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-pickle-subtle mb-1.5">
-                Ville / Zone
+            <div className="md:col-span-2 space-y-1">
+              <label className="block text-xs font-bold text-[#8E8E8E] uppercase">
+                Rayon (km) :
               </label>
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <MapPin className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
-                  <input
-                    type="text"
-                    placeholder="ex: Rouen, Normandie..."
-                    value={location}
-                    onChange={(e) => setLocation(e.target.value)}
-                    required
-                    className="w-full bg-pickle-dark border border-pickle-border rounded-full pl-9 pr-3 py-2 text-xs text-white focus:outline-none focus:border-pickle-lime"
-                  />
-                </div>
-                <div className="bg-pickle-dark border border-pickle-border rounded-full px-3.5 flex items-center text-xs text-pickle-subtle whitespace-nowrap">
-                  Rayon : {radiusKm} km
-                </div>
-              </div>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                value={radiusKm}
+                onChange={(e) => setRadiusKm(Number(e.target.value))}
+                className="w-full bg-[#0C0C0C] border border-[#282828] px-3.5 py-2 text-xs text-white focus:outline-none focus:border-[#C5EA4B]"
+              />
             </div>
+
           </div>
 
-          <div>
-            <div className="flex justify-between text-[11px] text-pickle-subtle mb-1">
-              <span>Rayon : {radiusKm} km</span>
-              <span>Max: 100 km</span>
-            </div>
-            <input
-              type="range"
-              min="5"
-              max="100"
-              step="5"
-              value={radiusKm}
-              onChange={(e) => setRadiusKm(Number(e.target.value))}
-              className="w-full accent-pickle-lime"
-            />
-          </div>
-
-          {/* Contracts */}
-          <div>
-            <label className="block text-xs font-semibold text-pickle-subtle mb-2">
-              Types de contrat
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {CONTRACT_OPTIONS.map((c) => {
-                const active = selectedContracts.includes(c);
+          {/* Contract Types */}
+          <div className="space-y-2 pt-2">
+            <span className="block text-xs font-bold text-[#8E8E8E] uppercase">
+              Types de contrats acceptés :
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {CONTRACT_OPTIONS.map((contract) => {
+                const isSelected = selectedContracts.includes(contract);
                 return (
                   <button
                     type="button"
-                    key={c}
-                    onClick={() => toggleContract(c)}
-                    className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all border ${
-                      active
-                        ? 'bg-pickle-lime text-pickle-dark border-pickle-lime shadow-sm'
-                        : 'bg-pickle-dark text-pickle-subtle border-pickle-border hover:border-neutral-700'
+                    key={contract}
+                    onClick={() => toggleContract(contract)}
+                    className={`px-3 py-1 text-xs font-bold transition-all border ${
+                      isSelected
+                        ? 'bg-[#C5EA4B] text-black border-[#C5EA4B]'
+                        : 'bg-[#0C0C0C] text-[#8E8E8E] border-[#262626] hover:text-white'
                     }`}
                   >
-                    {active ? '✓ ' : '+ '}{c}
+                    {contract.toUpperCase()}
                   </button>
                 );
               })}
             </div>
           </div>
 
-          {/* Platforms */}
-          <div>
-            <label className="block text-xs font-semibold text-pickle-subtle mb-2">
-              Plateformes ciblées
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {PLATFORM_OPTIONS.map((p) => {
-                const active = selectedPlatforms.includes(p);
+          {/* Platforms to scan */}
+          <div className="space-y-2 pt-2">
+            <span className="block text-xs font-bold text-[#8E8E8E] uppercase">
+              Plateformes et Portails à prospecter :
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {PLATFORM_OPTIONS.map((plat) => {
+                const isSelected = selectedPlatforms.includes(plat);
                 return (
                   <button
                     type="button"
-                    key={p}
-                    onClick={() => togglePlatform(p)}
-                    className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all border ${
-                      active
-                        ? 'bg-blue-500/20 text-blue-300 border-blue-500/50 shadow-sm'
-                        : 'bg-pickle-dark text-pickle-subtle border-pickle-border hover:border-neutral-700'
+                    key={plat}
+                    onClick={() => togglePlatform(plat)}
+                    className={`px-3 py-1 text-xs font-bold transition-all border ${
+                      isSelected
+                        ? 'bg-[#182610] text-[#C5EA4B] border-[#C5EA4B]'
+                        : 'bg-[#0C0C0C] text-[#8E8E8E] border-[#262626] hover:text-white'
                     }`}
                   >
-                    {active ? '✓ ' : '+ '}{p}
+                    {plat.toUpperCase()}
                   </button>
                 );
               })}
             </div>
           </div>
 
-          <div className="pt-2">
+          <div className="pt-3 flex justify-end">
             <button
               type="submit"
               disabled={isSubmitting}
-              className="bg-pickle-lime hover:bg-pickle-limeHover text-pickle-dark font-black px-5 py-2.5 rounded-full text-xs flex items-center gap-2 shadow-md shadow-pickle-lime/20 active:scale-95 transition-all"
+              className="bg-[#C5EA4B] hover:bg-[#d6f859] text-black font-black px-6 py-2 text-xs flex items-center gap-2 border border-[#C5EA4B] transition-all"
             >
               <Plus className="h-4 w-4" />
-              <span>Enregistrer cette cible</span>
+              <span>AJOUTER CETTE CIBLE</span>
             </button>
           </div>
         </form>
       </div>
 
-      {/* Active Queries */}
-      <div className="space-y-4">
-        <h3 className="font-extrabold text-sm text-white font-['Inter_Tight',sans-serif]">
-          Cibles Actives en Veille ({queries.length})
+      {/* Existing Queries List */}
+      <div className="space-y-3">
+        <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+          Cibles Actives ({queries.length})
         </h3>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {queries.map((q) => (
-            <div
-              key={q.id}
-              className="bg-pickle-card border border-pickle-border rounded-2xl p-4 flex flex-col justify-between gap-3 shadow-md hover:border-neutral-700 transition-all"
-            >
-              <div>
-                <div className="flex items-start justify-between gap-2">
-                  <h4 className="font-extrabold text-sm text-white">{q.query_text}</h4>
-                  <button
-                    onClick={() => onDeleteQuery(q.id)}
-                    className="text-neutral-500 hover:text-red-400 p-1"
-                    title="Supprimer"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+        {queries.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {queries.map((q) => (
+              <div 
+                key={q.id}
+                className="bg-[#141414] border border-[#242424] p-4 flex flex-col justify-between gap-3 hover:border-[#444444] transition-all"
+              >
+                <div>
+                  <div className="flex items-start justify-between gap-2">
+                    <h4 className="font-bold text-white text-sm">{q.query_text}</h4>
+                    <button
+                      onClick={() => onDeleteQuery(q.id)}
+                      className="text-[#8E8E8E] hover:text-[#FA5F11] transition-colors p-1"
+                      title="Supprimer cette cible"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-3 text-xs text-[#8E8E8E] mt-2">
+                    <span className="flex items-center gap-1">
+                      <MapPin className="h-3 w-3 text-[#666666]" />
+                      {q.location} ({q.radius_km} km)
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Clock className="h-3 w-3 text-[#666666]" />
+                      {q.last_run_at ? `Scanné le ${new Date(q.last_run_at).toLocaleDateString()}` : 'Jamais scanné'}
+                    </span>
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-2 text-xs text-pickle-subtle mt-1">
-                  <span className="flex items-center gap-1">
-                    <MapPin className="h-3.5 w-3.5 text-neutral-500" />
-                    {q.location} (+{q.radius_km}km)
-                  </span>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex flex-wrap gap-1">
+                <div className="flex flex-wrap gap-1 border-t border-[#242424] pt-2">
                   {q.contract_types.map((c, i) => (
-                    <span key={i} className="bg-pickle-lime/10 text-pickle-lime border border-pickle-lime/30 text-[10px] font-bold px-2.5 py-0.5 rounded-full">
+                    <span key={i} className="text-[10px] bg-[#0C0C0C] text-[#C5EA4B] border border-[#262626] px-1.5 py-0.5">
                       {c}
                     </span>
                   ))}
                   {q.platforms.map((p, i) => (
-                    <span key={i} className="bg-neutral-900 text-pickle-subtle border border-neutral-800 text-[10px] px-2 py-0.5 rounded-full">
+                    <span key={i} className="text-[10px] bg-[#0C0C0C] text-[#8E8E8E] border border-[#262626] px-1.5 py-0.5">
                       {p}
                     </span>
                   ))}
                 </div>
-
-                <div className="flex items-center justify-between text-[11px] text-pickle-subtle pt-2 border-t border-pickle-border">
-                  <span className="flex items-center gap-1">
-                    <Layers className="h-3 w-3" /> {q.total_found} offres trouvées
-                  </span>
-                  {q.last_run_at && (
-                    <span className="flex items-center gap-1">
-                      <Clock className="h-3 w-3" /> Dernier scan : {new Date(q.last_run_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  )}
-                </div>
               </div>
-
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="bg-[#141414] border border-dashed border-[#242424] p-8 text-center text-xs text-[#666666]">
+            <Layers className="h-8 w-8 mx-auto mb-2 text-[#444444]" />
+            <span>Aucune cible configurée. Créez-en une ci-dessus pour lancer la veille.</span>
+          </div>
+        )}
       </div>
-
     </div>
   );
 };

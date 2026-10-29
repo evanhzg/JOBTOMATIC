@@ -145,3 +145,33 @@ export async function fetchMasterCVHtml(): Promise<{ html: string }> {
   const res = await fetch(`${API_BASE}/profile/preview-html`);
   return res.json();
 }
+
+export async function uploadOriginalCv(file: File): Promise<any> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await fetch(`${API_BASE}/profile/upload-cv`, {
+    method: 'POST',
+    body: formData
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Échec upload CV' }));
+    throw new Error(err.detail || 'Erreur lors de l\'import du CV');
+  }
+  return res.json();
+}
+
+export async function inspectCvEfficiency(): Promise<any> {
+  const res = await fetch(`${API_BASE}/profile/inspect-efficiency`, {
+    method: 'POST'
+  });
+  return res.json();
+}
+
+export async function generateMetricVariants(metricId: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/profile/generate-variants`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ metric_id: metricId })
+  });
+  return res.json();
+}

@@ -4,13 +4,14 @@ import os
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional
 import aiosqlite
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from pypdf import PdfReader
 
-from .config import CVS_DIR, DB_PATH, SCREENSHOTS_DIR
+from .config import CVS_DIR, DB_PATH, SCREENSHOTS_DIR, IMPORTED_CV_DIR
 from .database import get_db, init_db, log_activity
 from .agy_bridge import ai_bridge
 from .cv_renderer import cv_renderer
@@ -53,8 +54,11 @@ app.add_middleware(
 # Mount storage directories for PDFs and screenshots
 app.mount("/static/cvs", StaticFiles(directory=str(CVS_DIR)), name="cvs")
 app.mount("/static/screenshots", StaticFiles(directory=str(SCREENSHOTS_DIR)), name="screenshots")
+app.mount("/static/imported", StaticFiles(directory=str(IMPORTED_CV_DIR)), name="imported")
 
 # Pydantic Request Models
+class MetricVariantRequest(BaseModel):
+    metric_id: str
 class SearchQueryCreate(BaseModel):
     query_text: str
     location: str
@@ -488,6 +492,11 @@ async def get_profile():
                     profile[f] = json.loads(profile[f])
                 except Exception:
                     pass
+        if profile.get("efficiency_metrics"):
+            try:
+                profile["efficiency_metrics"] = json.loads(profile["efficiency_metrics"])
+            except Exception:
+                profile["efficiency_metrics"] = None
     return profile
 
 @app.post("/api/profile")
@@ -566,6 +575,104 @@ async def preview_base_cv_html():
     }
     html = await cv_renderer.render_cv_html(profile, tailored_data, "CV de Base", "Candidature")
     return {"html": html}
+
+@app.post("/api/profile/upload-cv")
+async def upload_imported_cv(file: UploadFile = File(...)):
+    """Uploads an authentic original CV file (PDF), preserving its exact original design and extracting text for AI multi-metric inspection."""
+    filename = file.filename or "cv_original.pdf"
+    clean_filename = f"original_{int(asyncio.get_event_loop().time() * 1000)}_{filename.replace(' ', '_')}"
+    save_path = IMPORTED_CV_DIR / clean_filename
+
+    content = await file.read()
+    with open(save_path, "wb") as f:
+        f.write(content)
+
+    # Extract text content using pypdf if PDF
+    extracted_text = ""
+    if filename.lower().endswith(".pdf"):
+        try:
+            reader = PdfReader(str(save_path))
+            for page in reader.pages:
+                extracted_text += page.extract_text() or ""
+        except Exception as e:
+            await log_activity("WARNING", f"Extraction de texte PDF: {e}")
+    else:
+        try:
+            extracted_text = content.decode("utf-8", errors="ignore")
+        except Exception:
+            extracted_text = "CV original importé."
+
+    # Inspect efficiency across the 5 dimensions
+    metrics = await ai_bridge.inspect_cv_efficiency(extracted_text, "Général", "Rouen")
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("""
+            UPDATE profile
+            SET original_cv_path = ?,
+                original_cv_filename = ?,
+                original_cv_text = ?,
+                efficiency_metrics = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = 1
+        """, (str(save_path), filename, extracted_text, json.dumps(metrics, ensure_ascii=False)))
+        await db.commit()
+
+    await log_activity("SUCCESS", f"CV original importé avec succès : '{filename}' ! Calcul d'efficacité IA terminé.")
+    await broadcast_ws("profile_updated", {"has_original_cv": True})
+    return {
+        "status": "ok",
+        "filename": filename,
+        "saved_path": str(save_path),
+        "metrics": metrics
+    }
+
+@app.get("/api/profile/original-cv")
+async def get_original_cv():
+    """Serves the authentic uploaded original CV file so it retains 100% of its native design and graphics."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute("SELECT original_cv_path, original_cv_filename FROM profile WHERE id = 1")
+        row = await cur.fetchone()
+        if not row or not row["original_cv_path"] or not os.path.exists(row["original_cv_path"]):
+            raise HTTPException(status_code=404, detail="Aucun CV original n'a encore été importé.")
+        
+        path = row["original_cv_path"]
+        media_type = "application/pdf" if path.lower().endswith(".pdf") else "application/octet-stream"
+        return FileResponse(path, media_type=media_type, filename=row["original_cv_filename"] or "cv_original.pdf")
+
+@app.post("/api/profile/inspect-efficiency")
+async def inspect_cv_efficiency():
+    """Runs or refreshes multi-metric efficiency calculation for the imported CV."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute("SELECT * FROM profile WHERE id = 1")
+        row = await cur.fetchone()
+        profile = dict(row)
+
+    text_to_audit = profile.get("original_cv_text") or (
+        f"{profile.get('headline')} {profile.get('summary')} {profile.get('skills')} {profile.get('experiences')}"
+    )
+
+    metrics = await ai_bridge.inspect_cv_efficiency(text_to_audit, profile.get("headline", "Développeur"), profile.get("city", "Rouen"))
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("UPDATE profile SET efficiency_metrics = ? WHERE id = 1", (json.dumps(metrics, ensure_ascii=False),))
+        await db.commit()
+
+    return metrics
+
+@app.post("/api/profile/generate-variants")
+async def generate_variants(payload: MetricVariantRequest):
+    """Generates 3 maximum-score variants for any sub-metric scored below 80% threshold."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute("SELECT * FROM profile WHERE id = 1")
+        row = await cur.fetchone()
+        profile = dict(row)
+
+    text = profile.get("original_cv_text") or f"{profile.get('summary')} {profile.get('experiences')}"
+    variants_data = await ai_bridge.generate_metric_variants(payload.metric_id, text, profile.get("headline", "Développeur"))
+    return variants_data
 
 # Settings Endpoints
 

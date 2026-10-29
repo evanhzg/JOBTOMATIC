@@ -77,6 +77,32 @@ export interface Education {
   details?: string;
 }
 
+export interface EfficiencySubMetric {
+  id: string;
+  name: string;
+  score: number;
+  is_below_80: boolean;
+  diagnosis: string;
+  short_advice: string;
+}
+
+export interface EfficiencyReport {
+  overall_score: number;
+  sub_metrics: EfficiencySubMetric[];
+}
+
+export interface MetricVariant {
+  title: string;
+  content: string;
+}
+
+export interface MetricVariantsResponse {
+  metric_id: string;
+  projected_score: number;
+  explanation: string;
+  variants: MetricVariant[];
+}
+
 export interface CandidateProfile {
   id?: number;
   full_name: string;
@@ -95,6 +121,10 @@ export interface CandidateProfile {
     min_salary?: string;
     work_types?: string[];
   };
+  original_cv_path?: string | null;
+  original_cv_filename?: string | null;
+  original_cv_text?: string | null;
+  efficiency_metrics?: EfficiencyReport | string | null;
 }
 
 export interface SystemSettings {

@@ -102,7 +102,11 @@ async def init_db():
             ("settings", "ai_provider", "TEXT DEFAULT 'agy'"),
             ("settings", "wait_for_batch_validation", "INTEGER DEFAULT 0"),
             ("settings", "anthropic_api_key", "TEXT DEFAULT ''"),
-            ("jobs", "cv_improvement_suggestions", "TEXT")
+            ("jobs", "cv_improvement_suggestions", "TEXT"),
+            ("profile", "original_cv_path", "TEXT"),
+            ("profile", "original_cv_filename", "TEXT"),
+            ("profile", "original_cv_text", "TEXT"),
+            ("profile", "efficiency_metrics", "TEXT")
         ]
         for tbl, col, col_type in columns_to_add:
             try:

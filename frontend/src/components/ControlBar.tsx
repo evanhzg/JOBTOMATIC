@@ -1,6 +1,5 @@
 import React from 'react';
 import { 
-  Bot, 
   Pause, 
   Play, 
   Power, 
@@ -12,11 +11,11 @@ import {
   MessageSquareReply, 
   Sparkles,
   Send,
-  Layers,
   Cpu,
   CheckCheck
 } from 'lucide-react';
 import { SystemStats } from '../types';
+import { WashRotomMascot } from './WashRotomMascot';
 
 interface ControlBarProps {
   stats: SystemStats | null;
@@ -45,210 +44,210 @@ export const ControlBar: React.FC<ControlBarProps> = ({
   const activeProvider = stats?.ai_provider || 'agy';
 
   return (
-    <header className="bg-pickle-dark/95 border-b border-pickle-border sticky top-0 z-40 backdrop-blur-md shadow-2xl">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+    <header className="bg-[#0C0C0C] border-b border-[#242424] sticky top-0 z-40">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
           
-          {/* Logo & Pickles.team Brand Ethos */}
+          {/* Logo & Hand-drawn Motisma Dishwasher (Wash Rotom) Mascot */}
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-2xl bg-pickle-lime flex items-center justify-center shadow-lg shadow-pickle-lime/20 text-slate-950 text-xl font-black">
-              🥒
+            <div className="border border-[#2A2A2A] bg-[#141414] p-1.5 flex items-center justify-center">
+              <WashRotomMascot size={38} />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl font-extrabold tracking-tight text-white flex items-center gap-1.5 font-['Inter_Tight',sans-serif]">
-                  JobHunter <span className="text-pickle-lime font-black">Pickles</span>
+                <h1 className="text-xl font-black tracking-wider text-white font-mono uppercase">
+                  JOB<span className="text-[#C5EA4B]">TOMATIC</span>
                 </h1>
-                <span className="text-[10px] font-bold uppercase tracking-widest bg-pickle-lime/10 text-pickle-lime border border-pickle-lime/30 px-2 py-0.5 rounded-full flex items-center gap-1">
-                  <Sparkles className="h-2.5 w-2.5" /> AI Autopilot
+                <span className="text-[10px] font-mono font-bold uppercase tracking-widest bg-[#1B1B1B] text-[#C5EA4B] border border-[#333333] px-2 py-0.5 flex items-center gap-1">
+                  <Sparkles className="h-2.5 w-2.5 text-[#C5EA4B]" /> [AUTOPILOT]
                 </span>
               </div>
-              <p className="text-xs text-pickle-subtle">
-                Style Pickles.team — Chasseur d'emploi & CV sur-mesure
+              <p className="text-[11px] font-mono text-[#8E8E8E] tracking-tight">
+                Mascotte Motisma Lave-Vaisselle — Candidatures Auto & CV Sur-Mesure
               </p>
             </div>
           </div>
 
-          {/* AI Engine Selector (AGY, Claude, Codex) */}
-          <div className="flex items-center bg-pickle-card border border-pickle-border rounded-full p-1 gap-1 self-start lg:self-auto">
-            <span className="text-[10px] uppercase font-bold text-pickle-subtle px-2.5 flex items-center gap-1">
-              <Cpu className="h-3 w-3 text-pickle-lime" /> Moteur :
+          {/* AI Engine Switcher (AGY / Claude / Codex) - Pickles boxy brutalist selector */}
+          <div className="flex items-center bg-[#141414] border border-[#262626] p-0.5 gap-0.5 self-start lg:self-auto">
+            <span className="text-[10px] font-mono uppercase font-bold text-[#777777] px-2 flex items-center gap-1">
+              <Cpu className="h-3 w-3 text-[#C5EA4B]" /> IA:
             </span>
 
             <button
               onClick={() => onSelectProvider('agy')}
-              className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${
+              className={`px-3 py-1 font-mono text-xs font-bold transition-all border ${
                 activeProvider === 'agy'
-                  ? 'bg-pickle-lime text-pickle-dark shadow-sm'
-                  : 'text-pickle-subtle hover:text-white'
+                  ? 'bg-[#C5EA4B] text-[#0C0C0C] border-[#C5EA4B]'
+                  : 'bg-transparent text-[#8E8E8E] border-transparent hover:text-white'
               }`}
-              title="Google Antigravity (Gemini 3.8 Flash via abonnement agy)"
+              title="Google Antigravity CLI (Gemini 3.8 Flash)"
             >
-              🥒 AGY
+              [AGY]
             </button>
 
             <button
               onClick={() => onSelectProvider('claude')}
-              className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${
+              className={`px-3 py-1 font-mono text-xs font-bold transition-all border ${
                 activeProvider === 'claude'
-                  ? 'bg-purple-500 text-white shadow-sm'
-                  : 'text-pickle-subtle hover:text-white'
+                  ? 'bg-[#B070FF] text-black border-[#B070FF]'
+                  : 'bg-transparent text-[#8E8E8E] border-transparent hover:text-white'
               }`}
-              title="Anthropic Claude Code"
+              title="Anthropic Claude"
             >
-              🟣 Claude
+              [CLAUDE]
             </button>
 
             <button
               onClick={() => onSelectProvider('codex')}
-              className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${
+              className={`px-3 py-1 font-mono text-xs font-bold transition-all border ${
                 activeProvider === 'codex'
-                  ? 'bg-emerald-500 text-slate-950 shadow-sm'
-                  : 'text-pickle-subtle hover:text-white'
+                  ? 'bg-[#22C55E] text-black border-[#22C55E]'
+                  : 'bg-transparent text-[#8E8E8E] border-transparent hover:text-white'
               }`}
               title="OpenAI Codex CLI"
             >
-              🟢 Codex
+              [CODEX]
             </button>
           </div>
 
-          {/* Master Controls: Batch Validation, Autopilot Toggle & Pause Button */}
+          {/* Master Action Controls: Batch Validation, Autopilot & Instant Pause */}
           <div className="flex items-center flex-wrap gap-2">
             
             {/* Batch Validation Toggle */}
             <button
               onClick={onToggleBatchValidation}
               disabled={isLoading}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold transition-all border ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 font-mono text-xs font-bold transition-all border ${
                 isBatchValidation
-                  ? 'bg-pickle-card text-pickle-lime border-pickle-lime/50 shadow-sm'
-                  : 'bg-pickle-card text-pickle-subtle border-pickle-border hover:border-neutral-700'
+                  ? 'bg-[#181818] text-[#C5EA4B] border-[#C5EA4B]'
+                  : 'bg-[#141414] text-[#8E8E8E] border-[#262626] hover:border-[#444444]'
               }`}
-              title="Si activé, le moteur prépare les candidatures et attend votre validation par lot avant l'envoi"
+              title="Si activé, l'IA génère les CVs et attend votre clic de validation avant d'envoyer la candidature"
             >
-              <CheckCheck className={`h-3.5 w-3.5 ${isBatchValidation ? 'text-pickle-lime' : 'text-neutral-500'}`} />
-              <span>Validation par lot :</span>
-              <span className={`px-1.5 py-0.2 rounded text-[10px] font-extrabold ${isBatchValidation ? 'bg-pickle-lime/20 text-pickle-lime' : 'bg-neutral-800 text-neutral-400'}`}>
-                {isBatchValidation ? 'OUI' : 'NON'}
+              <CheckCheck className={`h-3.5 w-3.5 ${isBatchValidation ? 'text-[#C5EA4B]' : 'text-neutral-500'}`} />
+              <span>BATCH VALIDATION:</span>
+              <span className={`px-1 font-mono text-[10px] ${isBatchValidation ? 'bg-[#C5EA4B] text-black font-black' : 'bg-[#222222] text-[#888888]'}`}>
+                {isBatchValidation ? 'ON' : 'OFF'}
               </span>
             </button>
 
-            {/* Master Toggle */}
+            {/* Master Autopilot Toggle */}
             <button
               onClick={onToggleAutopilot}
               disabled={isLoading}
-              className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-black transition-all shadow-md active:scale-95 ${
+              className={`flex items-center gap-2 px-3.5 py-1.5 font-mono text-xs font-black transition-all border ${
                 isAuto
-                  ? 'bg-pickle-lime hover:bg-pickle-limeHover text-pickle-dark shadow-pickle-lime/20'
-                  : 'bg-pickle-card hover:bg-pickle-cardHover text-slate-300 border border-pickle-border'
+                  ? 'bg-[#C5EA4B] text-[#0C0C0C] border-[#C5EA4B] hover:bg-[#d6f859]'
+                  : 'bg-[#141414] text-[#CCCCCC] border-[#262626] hover:border-[#444444]'
               }`}
-              title={isAuto ? "Désactiver le pilote automatique" : "Activer le pilote automatique"}
+              title={isAuto ? "Arrêter le cycle de prospection automatique" : "Lancer le cycle de prospection automatique"}
             >
               <Power className="h-3.5 w-3.5" />
-              <span>{isAuto ? 'AUTOPILOT ACTIF' : 'AUTOPILOT OFF'}</span>
-              <span className={`h-2 w-2 rounded-full ${isAuto ? 'bg-pickle-dark animate-ping' : 'bg-neutral-600'}`} />
+              <span>{isAuto ? 'AUTOPILOT [ACTIF]' : 'AUTOPILOT [INACTIF]'}</span>
+              <span className={`h-2 w-2 ${isAuto ? 'bg-black animate-ping' : 'bg-[#444444]'}`} />
             </button>
 
-            {/* Pause Button */}
+            {/* Instant Pause Button */}
             <button
               onClick={onTogglePause}
               disabled={isLoading}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold transition-all active:scale-95 border ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 font-mono text-xs font-bold transition-all border ${
                 isPaused
-                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-md animate-pulse'
-                  : 'bg-pickle-card hover:bg-pickle-cardHover text-slate-300 border-pickle-border'
+                  ? 'bg-[#FA5F11] text-black border-[#FA5F11] animate-pulse'
+                  : 'bg-[#141414] text-[#CCCCCC] border-[#262626] hover:border-[#444444]'
               }`}
-              title={isPaused ? "Reprendre les activités" : "Mettre en pause immédiatement"}
+              title={isPaused ? "Reprendre les opérations" : "Mettre en pause immédiate toutes les actions"}
             >
-              {isPaused ? <Play className="h-3.5 w-3.5 text-amber-400 fill-amber-400" /> : <Pause className="h-3.5 w-3.5" />}
+              {isPaused ? <Play className="h-3.5 w-3.5 fill-black" /> : <Pause className="h-3.5 w-3.5" />}
               <span>{isPaused ? 'EN PAUSE' : 'PAUSE'}</span>
             </button>
           </div>
 
         </div>
 
-        {/* Tab Navigation Menu & KPI Pills */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-4 border-t border-pickle-border pt-3">
-          <nav className="flex items-center gap-1 overflow-x-auto scrollbar-none">
+        {/* Technical Brutalist Pickles Navigation Bar */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-3 border-t border-[#242424] pt-2.5">
+          <nav className="flex items-center gap-1 overflow-x-auto scrollbar-none font-mono">
             <button
               onClick={() => setActiveTab('kanban')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors shrink-0 ${
+              className={`flex items-center gap-1.5 px-3 py-1 text-xs font-bold transition-all border ${
                 activeTab === 'kanban'
-                  ? 'bg-pickle-lime text-pickle-dark'
-                  : 'text-pickle-subtle hover:text-white hover:bg-pickle-card'
+                  ? 'bg-[#1B1B1B] text-[#C5EA4B] border-[#C5EA4B]'
+                  : 'bg-transparent text-[#8E8E8E] border-transparent hover:text-white hover:bg-[#141414]'
               }`}
             >
               <LayoutDashboard className="h-3.5 w-3.5" />
-              <span>Tableau Kanban</span>
+              <span>[01] KANBAN</span>
             </button>
 
             <button
               onClick={() => setActiveTab('search')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors shrink-0 ${
+              className={`flex items-center gap-1.5 px-3 py-1 text-xs font-bold transition-all border ${
                 activeTab === 'search'
-                  ? 'bg-pickle-lime text-pickle-dark'
-                  : 'text-pickle-subtle hover:text-white hover:bg-pickle-card'
+                  ? 'bg-[#1B1B1B] text-[#C5EA4B] border-[#C5EA4B]'
+                  : 'bg-transparent text-[#8E8E8E] border-transparent hover:text-white hover:bg-[#141414]'
               }`}
             >
               <Search className="h-3.5 w-3.5" />
-              <span>Cibles & Métiers (Rouen...)</span>
+              <span>[02] CIBLES</span>
             </button>
 
             <button
               onClick={() => setActiveTab('profile')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors shrink-0 ${
+              className={`flex items-center gap-1.5 px-3 py-1 text-xs font-bold transition-all border ${
                 activeTab === 'profile'
-                  ? 'bg-pickle-lime text-pickle-dark'
-                  : 'text-pickle-subtle hover:text-white hover:bg-pickle-card'
+                  ? 'bg-[#1B1B1B] text-[#C5EA4B] border-[#C5EA4B]'
+                  : 'bg-transparent text-[#8E8E8E] border-transparent hover:text-white hover:bg-[#141414]'
               }`}
             >
               <UserCircle className="h-3.5 w-3.5" />
-              <span>CV Maître & Aperçu</span>
+              <span>[03] CV ORIGINAL & AUDIT</span>
             </button>
 
             <button
               onClick={() => setActiveTab('settings')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors shrink-0 ${
+              className={`flex items-center gap-1.5 px-3 py-1 text-xs font-bold transition-all border ${
                 activeTab === 'settings'
-                  ? 'bg-pickle-lime text-pickle-dark'
-                  : 'text-pickle-subtle hover:text-white hover:bg-pickle-card'
+                  ? 'bg-[#1B1B1B] text-[#C5EA4B] border-[#C5EA4B]'
+                  : 'bg-transparent text-[#8E8E8E] border-transparent hover:text-white hover:bg-[#141414]'
               }`}
             >
               <Settings className="h-3.5 w-3.5" />
-              <span>Paramètres & Gmail</span>
+              <span>[04] PARAMÈTRES</span>
             </button>
 
             <button
               onClick={() => setActiveTab('console')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors shrink-0 ${
+              className={`flex items-center gap-1.5 px-3 py-1 text-xs font-bold transition-all border ${
                 activeTab === 'console'
-                  ? 'bg-pickle-lime text-pickle-dark'
-                  : 'text-pickle-subtle hover:text-white hover:bg-pickle-card'
+                  ? 'bg-[#1B1B1B] text-[#C5EA4B] border-[#C5EA4B]'
+                  : 'bg-transparent text-[#8E8E8E] border-transparent hover:text-white hover:bg-[#141414]'
               }`}
             >
               <Terminal className="h-3.5 w-3.5" />
-              <span>Moniteur & Logs</span>
+              <span>[05] CONSOLE</span>
             </button>
           </nav>
 
-          {/* Quick Counter Chips */}
-          <div className="flex items-center gap-2 text-xs overflow-x-auto scrollbar-none">
-            <span className="bg-pickle-card border border-pickle-border rounded-full px-3 py-1 text-pickle-subtle flex items-center gap-1.5 text-[11px]">
-              Offres: <strong className="text-white font-bold">{stats?.total_jobs ?? 0}</strong>
+          {/* KPI Blocks (Not Rounded, Boxy Technical Grids) */}
+          <div className="flex items-center gap-2 font-mono text-xs overflow-x-auto scrollbar-none">
+            <span className="bg-[#141414] border border-[#242424] px-2.5 py-1 text-[#8E8E8E] flex items-center gap-1 text-[11px]">
+              OFFRES: <strong className="text-white font-bold">{stats?.total_jobs ?? 0}</strong>
             </span>
 
-            <span className="bg-pickle-card border border-pickle-border rounded-full px-3 py-1 text-pickle-subtle flex items-center gap-1.5 text-[11px]">
+            <span className="bg-[#141414] border border-[#242424] px-2.5 py-1 text-[#8E8E8E] flex items-center gap-1 text-[11px]">
               <Send className="h-3 w-3 text-blue-400" />
-              Candidatés: <strong className="text-blue-400 font-bold">{stats?.applied ?? 0}</strong>
+              CANDIDATÉS: <strong className="text-blue-400 font-bold">{stats?.applied ?? 0}</strong>
             </span>
 
-            <span className={`rounded-full px-3 py-1 text-[11px] font-bold flex items-center gap-1.5 border transition-all ${
+            <span className={`px-2.5 py-1 text-[11px] font-bold flex items-center gap-1.5 border transition-all ${
               (stats?.answer_received ?? 0) > 0
-                ? 'bg-pickle-lime text-pickle-dark border-pickle-lime shadow-md shadow-pickle-lime/30 animate-pulse'
-                : 'bg-pickle-card border-pickle-border text-pickle-subtle'
+                ? 'bg-[#1A2610] text-[#C5EA4B] border-[#C5EA4B]'
+                : 'bg-[#141414] border-[#242424] text-[#8E8E8E]'
             }`}>
               <MessageSquareReply className="h-3 w-3" />
-              Réponses : {stats?.answer_received ?? 0}
+              RÉPONSES: <strong>{stats?.answer_received ?? 0}</strong>
             </span>
           </div>
         </div>
