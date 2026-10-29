@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 import aiosqlite
 
 from .config import DB_PATH
-from .agy_bridge import agy_bridge
+from .agy_bridge import ai_bridge
 from .database import log_activity
 
 class InboxTracker:
@@ -131,8 +131,8 @@ class InboxTracker:
 
         await log_activity("SUCCESS", f"RÉPONSE DÉTECTÉE ! Le recruteur de {company} a répondu pour l'offre {title} !", job_id)
 
-        # Classify via AGY
-        analysis = await agy_bridge.classify_reply(subject, snippet, title)
+        # Classify via AI
+        analysis = await ai_bridge.classify_reply(subject, snippet, title)
         classification = analysis.get("classification", "INTERVIEW")
         summary = analysis.get("summary", "Réponse du recruteur")
 

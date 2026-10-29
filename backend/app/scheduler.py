@@ -6,7 +6,7 @@ import aiosqlite
 
 from .config import DB_PATH
 from .database import log_activity
-from .agy_bridge import agy_bridge
+from .agy_bridge import ai_bridge
 from .cv_renderer import cv_renderer
 from .scrapers import run_all_scrapers
 from .apply_engine import apply_engine
@@ -137,9 +137,9 @@ class JobHunterScheduler:
                 if curr_s.get("is_paused") == 1 or curr_s.get("is_autopilot_enabled") != 1:
                     break
 
-            # Evaluate fit with AGY
+            # Evaluate fit with AI
             await log_activity("INFO", f"Évaluation de la correspondance IA pour {job['title']} ({job['company']})...", job["id"])
-            fit = await agy_bridge.analyze_job_fit(job["title"], job["company"], job["description"], profile)
+            fit = await ai_bridge.analyze_job_fit(job["title"], job["company"], job["description"], profile)
             score = fit.get("match_score", 0)
             reasons = json.dumps(fit.get("match_reasons", []), ensure_ascii=False)
 
@@ -147,11 +147,11 @@ class JobHunterScheduler:
                 await db.execute("UPDATE jobs SET match_score = ?, match_reasons = ? WHERE id = ?", (score, reasons, job["id"]))
                 await db.commit()
 
-            # If score >= threshold, tailor CV and auto-apply!
+            # If score >= threshold, tailor CV
             if score >= threshold:
-                await log_activity("SUCCESS", f"Score élevé ({score}% >= {threshold}%). Personnalisation automatique du CV avec AGY...", job["id"])
+                await log_activity("SUCCESS", f"Score élevé ({score}% >= {threshold}%). Personnalisation automatique du CV...", job["id"])
 
-                tailored = await agy_bridge.tailor_cv_and_letter(job["title"], job["company"], job["description"], profile)
+                tailored = await ai_bridge.tailor_cv_and_letter(job["title"], job["company"], job["description"], profile)
                 pdf_path = await cv_renderer.generate_pdf(job["id"], profile, tailored, job["title"], job["company"])
 
                 async with aiosqlite.connect(DB_PATH) as db:
@@ -179,11 +179,15 @@ class JobHunterScheduler:
                 job["cover_letter"] = tailored.get("cover_letter")
                 job["tailored_title"] = tailored.get("tailored_headline")
 
-                # Auto-apply on Autopilot!
-                if job.get("contact_email") and "@" in job["contact_email"]:
-                    await apply_engine.apply_via_email(job, profile, settings)
+                # If batch validation is required, stop here and wait for user 1-click batch validation!
+                if settings.get("wait_for_batch_validation") == 1:
+                    await log_activity("INFO", f"Candidature prête et en attente de validation du lot pour {job['title']} ({job['company']})", job["id"])
                 else:
-                    await apply_engine.apply_via_web_form(job, profile)
+                    # Auto-apply directly on Autopilot!
+                    if job.get("contact_email") and "@" in job["contact_email"]:
+                        await apply_engine.apply_via_email(job, profile, settings)
+                    else:
+                        await apply_engine.apply_via_web_form(job, profile)
             else:
                 await log_activity("INFO", f"Score insuffisant ({score}% < {threshold}%) pour {job['title']}. Conservé dans Découvertes sans auto-candidature.", job["id"])
 

@@ -97,4 +97,33 @@ class CVRenderer:
             await log_activity("ERROR", f"Erreur lors de la génération PDF du CV: {e}", job_id)
             raise e
 
+    async def generate_base_cv_pdf(self, profile: Dict[str, Any]) -> str:
+        """Compiles the master base CV into an A4 PDF file using Playwright."""
+        tailored_data = {
+            "tailored_headline": profile.get("headline", "Profil Candidat"),
+            "tailored_summary": profile.get("summary", ""),
+            "highlighted_skills": profile.get("skills", []),
+            "adapted_experiences": profile.get("experiences", [])
+        }
+        html_content = await self.render_cv_html(profile, tailored_data, "Candidature Globale", "Entreprises Ciblées")
+        output_filename = f"CV_Master_{profile.get('full_name', 'Candidat').replace(' ', '_')}.pdf"
+        output_path = CVS_DIR / output_filename
+
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                page = await browser.new_page()
+                await page.set_content(html_content, wait_until="networkidle")
+                await page.pdf(
+                    path=str(output_path),
+                    format="A4",
+                    print_background=True,
+                    margin={"top": "14mm", "bottom": "14mm", "left": "16mm", "right": "16mm"}
+                )
+                await browser.close()
+            return str(output_path)
+        except Exception as e:
+            await log_activity("ERROR", f"Erreur lors de la génération du CV Maître: {e}")
+            raise e
+
 cv_renderer = CVRenderer()

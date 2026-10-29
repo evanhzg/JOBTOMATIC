@@ -6,6 +6,17 @@ export type JobStatus =
   | 'interview' 
   | 'archived';
 
+export interface CVImprovementSuggestions {
+  current_score: number;
+  projected_score: number;
+  critique: string;
+  missing_keywords: string[];
+  enhanced_headline: string;
+  boosted_summary: string;
+  skills_to_add: string[];
+  boosted_bullet_points: string[];
+}
+
 export interface Job {
   id: number;
   external_id: string;
@@ -33,6 +44,7 @@ export interface Job {
   answer_at?: string;
   answer_snippet?: string;
   answer_classification?: 'INTERVIEW' | 'INFO_REQUEST' | 'ACKNOWLEDGMENT' | 'REJECTION';
+  cv_improvement_suggestions?: CVImprovementSuggestions | null;
   created_at: string;
   updated_at: string;
 }
@@ -95,6 +107,9 @@ export interface SystemSettings {
   gmail_app_password?: string;
   gmail_app_password_set?: boolean;
   imap_poll_interval_mins: number;
+  ai_provider: 'agy' | 'claude' | 'codex';
+  wait_for_batch_validation: boolean;
+  anthropic_api_key?: string;
 }
 
 export interface SystemStats {
@@ -111,6 +126,8 @@ export interface SystemStats {
   is_paused: boolean;
   threshold: number;
   active_queries: number;
+  ai_provider: 'agy' | 'claude' | 'codex';
+  wait_for_batch_validation: boolean;
 }
 
 export interface ActivityLog {

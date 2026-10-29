@@ -6,7 +6,8 @@ import {
   SearchQuery, 
   CandidateProfile, 
   SystemSettings, 
-  ActivityLog 
+  ActivityLog,
+  CVImprovementSuggestions
 } from './types';
 import * as api from './api';
 import { ControlBar } from './components/ControlBar';
@@ -16,6 +17,7 @@ import { ProfileTab } from './components/ProfileTab';
 import { SettingsTab } from './components/SettingsTab';
 import { LiveConsole } from './components/LiveConsole';
 import { JobDetailModal } from './components/JobDetailModal';
+import { CVPreviewModal } from './components/CVPreviewModal';
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'kanban' | 'search' | 'profile' | 'settings' | 'console'>('kanban');
@@ -25,7 +27,10 @@ export const App: React.FC = () => {
   const [profile, setProfile] = useState<CandidateProfile | null>(null);
   const [settings, setSettings] = useState<SystemSettings | null>(null);
   const [logs, setLogs] = useState<ActivityLog[]>([]);
+  
+  // Modals state
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+  const [cvPreviewTarget, setCvPreviewTarget] = useState<{ job?: Job; isBase?: boolean } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   const loadData = useCallback(async () => {
@@ -45,17 +50,21 @@ export const App: React.FC = () => {
       setSettings(st);
       setLogs(l);
 
-      // If a modal is open, refresh its data
+      // Refresh opened modals if any
       if (selectedJob) {
-        const updatedSelected = j.find((x: Job) => x.id === selectedJob.id);
-        if (updatedSelected) setSelectedJob(updatedSelected);
+        const updated = j.find((x: Job) => x.id === selectedJob.id);
+        if (updated) setSelectedJob(updated);
+      }
+      if (cvPreviewTarget?.job) {
+        const updatedCV = j.find((x: Job) => x.id === cvPreviewTarget.job!.id);
+        if (updatedCV) setCvPreviewTarget({ job: updatedCV });
       }
     } catch (err) {
       console.error('Error loading data:', err);
     }
-  }, [selectedJob]);
+  }, [selectedJob, cvPreviewTarget]);
 
-  // Initial load
+  // Initial load & Polling interval
   useEffect(() => {
     loadData();
     const interval = setInterval(loadData, 8000);
@@ -71,7 +80,12 @@ export const App: React.FC = () => {
     socket.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data);
-        if (payload.type === 'job_updated' || payload.type === 'job_deleted' || payload.type === 'settings_updated') {
+        if (
+          payload.type === 'job_updated' || 
+          payload.type === 'job_deleted' || 
+          payload.type === 'settings_updated' ||
+          payload.type === 'jobs_batch_applied'
+        ) {
           loadData();
         }
       } catch (e) {
@@ -104,6 +118,26 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleToggleBatchValidation = async () => {
+    setIsLoading(true);
+    try {
+      await api.toggleBatchValidation();
+      await loadData();
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSelectProvider = async (p: 'agy' | 'claude' | 'codex') => {
+    setIsLoading(true);
+    try {
+      await api.setAiProvider(p);
+      await loadData();
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleApplyJob = async (jobId: number) => {
     try {
       await api.applyJob(jobId);
@@ -119,6 +153,16 @@ export const App: React.FC = () => {
       await loadData();
     } catch (err) {
       console.error('Error tailoring CV:', err);
+    }
+  };
+
+  const handleBatchValidate = async () => {
+    setIsLoading(true);
+    try {
+      await api.batchValidate();
+      await loadData();
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -138,6 +182,17 @@ export const App: React.FC = () => {
     } catch (err) {
       console.error('Error updating status:', err);
     }
+  };
+
+  const handleImproveCV = async (jobId: number): Promise<CVImprovementSuggestions> => {
+    const res = await api.improveJobCV(jobId);
+    await loadData();
+    return res.improvements;
+  };
+
+  const handleApplyImprovements = async (jobId: number) => {
+    await api.applyImprovements(jobId);
+    await loadData();
   };
 
   const handleAddQuery = async (newQuery: {
@@ -187,27 +242,33 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-slate-950">
-      {/* Top Navigation & Master Control Bar */}
+    <div className="min-h-screen bg-pickle-dark text-pickle-light flex flex-col font-sans selection:bg-pickle-lime selection:text-pickle-dark">
+      {/* Pickles.team Inspired Control Bar */}
       <ControlBar
         stats={stats}
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         onToggleAutopilot={handleToggleAutopilot}
         onTogglePause={handleTogglePause}
+        onToggleBatchValidation={handleToggleBatchValidation}
+        onSelectProvider={handleSelectProvider}
         isLoading={isLoading}
       />
 
-      {/* Main Content Area */}
+      {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-5">
         {activeTab === 'kanban' && (
           <KanbanBoard
             jobs={jobs}
+            waitBatchValidation={stats?.wait_for_batch_validation ?? false}
             onOpenDetails={(job) => setSelectedJob(job)}
+            onPreviewCV={(job) => setCvPreviewTarget({ job })}
+            onImproveCV={(job) => setCvPreviewTarget({ job })}
             onApply={handleApplyJob}
             onTailor={handleTailorJob}
             onSimulateReply={handleSimulateReply}
             onMoveStatus={handleMoveStatus}
+            onBatchValidate={handleBatchValidate}
           />
         )}
 
@@ -246,13 +307,25 @@ export const App: React.FC = () => {
         )}
       </main>
 
-      {/* Detailed Modal for CV preview & Recruiter responses */}
+      {/* Detailed Modal */}
       {selectedJob && (
         <JobDetailModal
           job={selectedJob}
           onClose={() => setSelectedJob(null)}
           onApply={handleApplyJob}
           onTailor={handleTailorJob}
+        />
+      )}
+
+      {/* Dedicated CV Preview & AI Improvement Modal */}
+      {cvPreviewTarget && (
+        <CVPreviewModal
+          job={cvPreviewTarget.job}
+          baseProfile={profile}
+          onClose={() => setCvPreviewTarget(null)}
+          onImproveCV={handleImproveCV}
+          onApplyImprovements={handleApplyImprovements}
+          onEditBaseProfile={() => setActiveTab('profile')}
         />
       )}
     </div>

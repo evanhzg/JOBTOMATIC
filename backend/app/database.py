@@ -90,9 +90,25 @@ async def init_db():
                 gmail_address TEXT DEFAULT '',
                 gmail_app_password TEXT DEFAULT '',
                 imap_poll_interval_mins INTEGER DEFAULT 3,
-                search_interval_mins INTEGER DEFAULT 15
+                search_interval_mins INTEGER DEFAULT 15,
+                ai_provider TEXT DEFAULT 'agy',
+                wait_for_batch_validation INTEGER DEFAULT 0,
+                anthropic_api_key TEXT DEFAULT ''
             )
         """)
+
+        # Migration columns if table already exists
+        columns_to_add = [
+            ("settings", "ai_provider", "TEXT DEFAULT 'agy'"),
+            ("settings", "wait_for_batch_validation", "INTEGER DEFAULT 0"),
+            ("settings", "anthropic_api_key", "TEXT DEFAULT ''"),
+            ("jobs", "cv_improvement_suggestions", "TEXT")
+        ]
+        for tbl, col, col_type in columns_to_add:
+            try:
+                await db.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {col_type}")
+            except Exception:
+                pass # Already added
 
         await db.execute("""
             CREATE TABLE IF NOT EXISTS logs (

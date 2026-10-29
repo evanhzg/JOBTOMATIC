@@ -10,7 +10,7 @@ import aiosqlite
 from playwright.async_api import async_playwright
 
 from .config import DB_PATH, SCREENSHOTS_DIR
-from .agy_bridge import agy_bridge
+from .agy_bridge import ai_bridge
 from .database import log_activity
 
 class ApplyEngine:

@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from .config import CVS_DIR, DB_PATH, SCREENSHOTS_DIR
 from .database import get_db, init_db, log_activity
-from .agy_bridge import agy_bridge
+from .agy_bridge import ai_bridge
 from .cv_renderer import cv_renderer
 from .scrapers import run_all_scrapers
 from .apply_engine import apply_engine
@@ -85,6 +85,9 @@ class SettingsUpdate(BaseModel):
     daily_application_limit: Optional[int] = None
     gmail_address: Optional[str] = None
     gmail_app_password: Optional[str] = None
+    ai_provider: Optional[str] = None
+    wait_for_batch_validation: Optional[bool] = None
+    anthropic_api_key: Optional[str] = None
 
 # Endpoints
 
@@ -118,7 +121,9 @@ async def get_stats():
         "autopilot_enabled": bool(settings.get("is_autopilot_enabled", 0)),
         "is_paused": bool(settings.get("is_paused", 0)),
         "threshold": settings.get("match_score_threshold", 75),
-        "active_queries": queries_count
+        "active_queries": queries_count,
+        "ai_provider": settings.get("ai_provider", "agy"),
+        "wait_for_batch_validation": bool(settings.get("wait_for_batch_validation", 0))
     }
 
 @app.get("/api/jobs")
@@ -138,6 +143,13 @@ async def get_jobs():
             if j.get("tailored_skills"):
                 try:
                     j["tailored_skills"] = json.loads(j["tailored_skills"])
+                except Exception:
+                    j["tailored_skills"] = []
+            if j.get("cv_improvement_suggestions"):
+                try:
+                    j["cv_improvement_suggestions"] = json.loads(j["cv_improvement_suggestions"])
+                except Exception:
+                    j["cv_improvement_suggestions"] = None
                 except Exception:
                     j["tailored_skills"] = []
 
@@ -189,8 +201,8 @@ async def tailor_job(job_id: int):
                 except Exception:
                     pass
 
-    await log_activity("INFO", f"Démarrage manuel de l'adaptation du CV pour {job['title']}...", job_id)
-    tailored = await agy_bridge.tailor_cv_and_letter(job["title"], job["company"], job["description"], profile)
+    await log_activity("INFO", f"Démarrage de l'adaptation du CV pour {job['title']}...", job_id)
+    tailored = await ai_bridge.tailor_cv_and_letter(job["title"], job["company"], job["description"], profile)
     pdf_path = await cv_renderer.generate_pdf(job_id, profile, tailored, job["title"], job["company"])
 
     async with aiosqlite.connect(DB_PATH) as db:
@@ -217,6 +229,137 @@ async def tailor_job(job_id: int):
     await broadcast_ws("job_updated", {"id": job_id, "status": "tailored"})
     return {"status": "ok", "pdf_path": pdf_path, "tailored": tailored}
 
+@app.post("/api/jobs/{job_id}/improve-cv")
+async def improve_cv_for_job(job_id: int):
+    """Uses AI to audit and boost a lower-scoring CV for a specific job."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
+        job = dict(await cur.fetchone())
+
+        cur = await db.execute("SELECT * FROM profile WHERE id = 1")
+        profile = dict(await cur.fetchone())
+        for f in ["skills", "experiences", "education", "languages", "preferences"]:
+            if isinstance(profile.get(f), str):
+                try:
+                    profile[f] = json.loads(profile[f])
+                except Exception:
+                    pass
+
+    await log_activity("INFO", f"Lancement de l'outil 'Améliorer mon CV' pour {job['title']}...", job_id)
+    improvements = await ai_bridge.improve_cv_for_job(job["title"], job["company"], job["description"], profile, job.get("match_score", 60))
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE jobs SET cv_improvement_suggestions = ? WHERE id = ?",
+            (json.dumps(improvements, ensure_ascii=False), job_id)
+        )
+        await db.commit()
+
+    await broadcast_ws("job_updated", {"id": job_id})
+    return {"status": "ok", "improvements": improvements}
+
+@app.post("/api/jobs/{job_id}/apply-improvements")
+async def apply_improvements(job_id: int):
+    """Applies the AI-generated improvements directly to the tailored CV and compiles an updated PDF."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
+        job = dict(await cur.fetchone())
+
+        if not job.get("cv_improvement_suggestions"):
+            raise HTTPException(status_code=400, detail="Aucune suggestion d'amélioration disponible")
+        improvements = json.loads(job["cv_improvement_suggestions"])
+
+        cur = await db.execute("SELECT * FROM profile WHERE id = 1")
+        profile = dict(await cur.fetchone())
+        for f in ["skills", "experiences", "education", "languages", "preferences"]:
+            if isinstance(profile.get(f), str):
+                try:
+                    profile[f] = json.loads(profile[f])
+                except Exception:
+                    pass
+
+    # Merge boosted skills & summary
+    new_score = improvements.get("projected_score", 90)
+    current_skills = profile.get("skills", [])
+    merged_skills = list(set(current_skills + improvements.get("skills_to_add", [])))
+
+    tailored_data = {
+        "tailored_headline": improvements.get("enhanced_headline", job.get("tailored_title", job["title"])),
+        "tailored_summary": improvements.get("boosted_summary", job.get("tailored_summary", "")),
+        "highlighted_skills": merged_skills[:8],
+        "adapted_experiences": [
+            {
+                "role": profile["experiences"][0]["role"] if profile.get("experiences") else "Poste Clé",
+                "company": profile["experiences"][0]["company"] if profile.get("experiences") else "Entreprise",
+                "period": profile["experiences"][0]["period"] if profile.get("experiences") else "2023 - 2024",
+                "location": profile.get("city", "Rouen"),
+                "details": improvements.get("boosted_bullet_points", ["Missions optimisées"])
+            }
+        ]
+    }
+
+    pdf_path = await cv_renderer.generate_pdf(job_id, profile, tailored_data, job["title"], job["company"])
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("""
+            UPDATE jobs
+            SET match_score = ?,
+                tailored_title = ?,
+                tailored_summary = ?,
+                tailored_skills = ?,
+                tailored_cv_path = ?,
+                status = 'tailored',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (
+            new_score,
+            tailored_data["tailored_headline"],
+            tailored_data["tailored_summary"],
+            json.dumps(tailored_data["highlighted_skills"], ensure_ascii=False),
+            pdf_path,
+            job_id
+        ))
+        await db.commit()
+
+    await log_activity("SUCCESS", f"Améliorations IA appliquées avec succès pour {job['title']} ! Nouveau score estimé : {new_score}%", job_id)
+    await broadcast_ws("job_updated", {"id": job_id, "status": "tailored", "match_score": new_score})
+    return {"status": "ok", "new_score": new_score, "pdf_path": pdf_path}
+
+@app.post("/api/jobs/batch-validate")
+async def batch_validate_and_apply():
+    """Validates and applies to all tailored jobs currently queued in a single batch dispatch."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute("SELECT * FROM jobs WHERE status = 'tailored'")
+        tailored_jobs = [dict(r) for r in await cur.fetchall()]
+
+        cur = await db.execute("SELECT * FROM profile WHERE id = 1")
+        profile = dict(await cur.fetchone())
+        for f in ["skills", "experiences", "education", "languages", "preferences"]:
+            if isinstance(profile.get(f), str):
+                try:
+                    profile[f] = json.loads(profile[f])
+                except Exception:
+                    pass
+
+        cur = await db.execute("SELECT * FROM settings WHERE id = 1")
+        settings = dict(await cur.fetchone())
+
+    applied_ids = []
+    for job in tailored_jobs:
+        if job.get("contact_email") and "@" in job["contact_email"]:
+            success = await apply_engine.apply_via_email(job, profile, settings)
+        else:
+            success = await apply_engine.apply_via_web_form(job, profile)
+        if success:
+            applied_ids.append(job["id"])
+
+    await log_activity("SUCCESS", f"Validation par lot effectuée : {len(applied_ids)} candidatures envoyées !")
+    await broadcast_ws("jobs_batch_applied", {"applied_count": len(applied_ids)})
+    return {"status": "ok", "applied_count": len(applied_ids), "job_ids": applied_ids}
+
 @app.post("/api/jobs/{job_id}/apply")
 async def apply_to_job(job_id: int):
     """Manually triggers application submission (via email or web form)."""
@@ -239,7 +382,7 @@ async def apply_to_job(job_id: int):
 
     # Ensure CV is tailored first if missing
     if not job.get("tailored_cv_path") or not os.path.exists(job["tailored_cv_path"]):
-        tailored = await agy_bridge.tailor_cv_and_letter(job["title"], job["company"], job["description"], profile)
+        tailored = await ai_bridge.tailor_cv_and_letter(job["title"], job["company"], job["description"], profile)
         pdf_path = await cv_renderer.generate_pdf(job_id, profile, tailored, job["title"], job["company"])
         job["tailored_cv_path"] = pdf_path
         job["cover_letter"] = tailored.get("cover_letter")
@@ -249,6 +392,9 @@ async def apply_to_job(job_id: int):
         success = await apply_engine.apply_via_email(job, profile, settings)
     else:
         success = await apply_engine.apply_via_web_form(job, profile)
+
+    await broadcast_ws("job_updated", {"id": job_id, "status": "applied"})
+    return {"status": "ok", "applied": success}
 
     await broadcast_ws("job_updated", {"id": job_id, "status": "applied"})
     return {"status": "ok", "applied": success}
@@ -379,6 +525,48 @@ async def update_profile(payload: ProfileUpdate):
     await log_activity("SUCCESS", "Profil et CV maître mis à jour.")
     return {"status": "ok"}
 
+@app.get("/api/profile/preview-pdf")
+async def preview_base_cv_pdf():
+    """Generates and serves the original / base master CV as a PDF."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute("SELECT * FROM profile WHERE id = 1")
+        row = await cur.fetchone()
+        profile = dict(row)
+        for f in ["skills", "experiences", "education", "languages", "preferences"]:
+            if isinstance(profile.get(f), str):
+                try:
+                    profile[f] = json.loads(profile[f])
+                except Exception:
+                    pass
+
+    pdf_path = await cv_renderer.generate_base_cv_pdf(profile)
+    return FileResponse(pdf_path, media_type="application/pdf", filename="CV_Master.pdf")
+
+@app.get("/api/profile/preview-html")
+async def preview_base_cv_html():
+    """Returns rendered HTML of the master base CV for instant in-app view."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute("SELECT * FROM profile WHERE id = 1")
+        row = await cur.fetchone()
+        profile = dict(row)
+        for f in ["skills", "experiences", "education", "languages", "preferences"]:
+            if isinstance(profile.get(f), str):
+                try:
+                    profile[f] = json.loads(profile[f])
+                except Exception:
+                    pass
+
+    tailored_data = {
+        "tailored_headline": profile.get("headline", "Profil Candidat"),
+        "tailored_summary": profile.get("summary", ""),
+        "highlighted_skills": profile.get("skills", []),
+        "adapted_experiences": profile.get("experiences", [])
+    }
+    html = await cv_renderer.render_cv_html(profile, tailored_data, "CV de Base", "Candidature")
+    return {"html": html}
+
 # Settings Endpoints
 
 @app.get("/api/settings")
@@ -393,6 +581,7 @@ async def get_settings():
             settings["gmail_app_password"] = "••••••••••••••••"
         else:
             settings["gmail_app_password_set"] = False
+        settings["wait_for_batch_validation"] = bool(settings.get("wait_for_batch_validation", 0))
     return settings
 
 @app.post("/api/settings")
@@ -406,6 +595,9 @@ async def update_settings(payload: SettingsUpdate):
         threshold = payload.match_score_threshold if payload.match_score_threshold is not None else current["match_score_threshold"]
         limit = payload.daily_application_limit if payload.daily_application_limit is not None else current["daily_application_limit"]
         gmail_addr = payload.gmail_address if payload.gmail_address is not None else current["gmail_address"]
+        provider = payload.ai_provider if payload.ai_provider is not None else current.get("ai_provider", "agy")
+        batch_val = payload.wait_for_batch_validation if payload.wait_for_batch_validation is not None else bool(current.get("wait_for_batch_validation", 0))
+        anthropic_key = payload.anthropic_api_key if payload.anthropic_api_key is not None else current.get("anthropic_api_key", "")
 
         # Only update password if provided and not masked
         gmail_pw = current["gmail_app_password"]
@@ -419,13 +611,41 @@ async def update_settings(payload: SettingsUpdate):
                 match_score_threshold = ?,
                 daily_application_limit = ?,
                 gmail_address = ?,
-                gmail_app_password = ?
+                gmail_app_password = ?,
+                ai_provider = ?,
+                wait_for_batch_validation = ?,
+                anthropic_api_key = ?
             WHERE id = 1
-        """, (int(is_auto), int(is_pause), threshold, limit, gmail_addr, gmail_pw))
+        """, (int(is_auto), int(is_pause), threshold, limit, gmail_addr, gmail_pw, provider, int(batch_val), anthropic_key))
         await db.commit()
 
-    await log_activity("INFO", "Paramètres du système mis à jour.")
+    await log_activity("INFO", f"Paramètres mis à jour (Moteur IA: {provider}, Validation par lot: {'Oui' if batch_val else 'Non'}).")
+    await broadcast_ws("settings_updated", {"ai_provider": provider, "wait_for_batch_validation": batch_val})
     return {"status": "ok"}
+
+@app.post("/api/settings/toggle-batch-validation")
+async def toggle_batch_validation():
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute("SELECT wait_for_batch_validation FROM settings WHERE id = 1")
+        current = (await cur.fetchone())[0] or 0
+        new_val = 0 if current == 1 else 1
+        await db.execute("UPDATE settings SET wait_for_batch_validation = ? WHERE id = 1", (new_val,))
+        await db.commit()
+    msg = "Validation par lot ACTIVÉE" if new_val == 1 else "Validation par lot DÉSACTIVÉE (envois immédiats)"
+    await log_activity("INFO", msg)
+    await broadcast_ws("settings_updated", {"wait_for_batch_validation": bool(new_val)})
+    return {"status": "ok", "wait_for_batch_validation": bool(new_val)}
+
+@app.post("/api/settings/set-provider")
+async def set_ai_provider(provider: str):
+    if provider not in ["agy", "claude", "codex"]:
+        raise HTTPException(status_code=400, detail="Fournisseur invalide")
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("UPDATE settings SET ai_provider = ? WHERE id = 1", (provider,))
+        await db.commit()
+    await log_activity("SUCCESS", f"Moteur d'intelligence artificielle configuré sur : {provider.upper()}")
+    await broadcast_ws("settings_updated", {"ai_provider": provider})
+    return {"status": "ok", "ai_provider": provider}
 
 @app.post("/api/settings/toggle-autopilot")
 async def toggle_autopilot():

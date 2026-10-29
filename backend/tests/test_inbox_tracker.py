@@ -1,3 +1,4 @@
+import time
 import pytest
 import aiosqlite
 from app.config import DB_PATH
@@ -7,12 +8,13 @@ from app.inbox_tracker import inbox_tracker
 @pytest.mark.asyncio
 async def test_simulate_mock_reply():
     await init_db()
+    ext_id = f"test_reply_{int(time.time() * 1000)}"
     async with aiosqlite.connect(DB_PATH) as db:
         # Create a test applied job
         cur = await db.execute("""
             INSERT INTO jobs (external_id, title, company, location, contract_type, description, url, status)
-            VALUES ('test_reply_1', 'Alternance Test', 'Rouen Tech SAS', 'Rouen', 'Alternance', 'Description', 'http://test', 'applied')
-        """)
+            VALUES (?, 'Alternance Test', 'Rouen Tech SAS', 'Rouen', 'Alternance', 'Description', 'http://test', 'applied')
+        """, (ext_id,))
         job_id = cur.lastrowid
         await db.commit()
 

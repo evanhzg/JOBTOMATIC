@@ -30,6 +30,21 @@ export async function tailorJob(id: number): Promise<any> {
   return res.json();
 }
 
+export async function improveJobCV(id: number): Promise<any> {
+  const res = await fetch(`${API_BASE}/jobs/${id}/improve-cv`, { method: 'POST' });
+  return res.json();
+}
+
+export async function applyImprovements(id: number): Promise<any> {
+  const res = await fetch(`${API_BASE}/jobs/${id}/apply-improvements`, { method: 'POST' });
+  return res.json();
+}
+
+export async function batchValidate(): Promise<any> {
+  const res = await fetch(`${API_BASE}/jobs/batch-validate`, { method: 'POST' });
+  return res.json();
+}
+
 export async function applyJob(id: number): Promise<any> {
   const res = await fetch(`${API_BASE}/jobs/${id}/apply`, { method: 'POST' });
   return res.json();
@@ -97,6 +112,15 @@ export async function updateSettings(settings: Partial<SystemSettings>): Promise
   });
 }
 
+export async function setAiProvider(provider: 'agy' | 'claude' | 'codex'): Promise<void> {
+  await fetch(`${API_BASE}/settings/set-provider?provider=${provider}`, { method: 'POST' });
+}
+
+export async function toggleBatchValidation(): Promise<{ wait_for_batch_validation: boolean }> {
+  const res = await fetch(`${API_BASE}/settings/toggle-batch-validation`, { method: 'POST' });
+  return res.json();
+}
+
 export async function toggleAutopilot(): Promise<{ is_autopilot_enabled: boolean }> {
   const res = await fetch(`${API_BASE}/settings/toggle-autopilot`, { method: 'POST' });
   return res.json();
@@ -114,5 +138,10 @@ export async function testEmailConnection(): Promise<{ status: string; message: 
 
 export async function fetchLogs(): Promise<ActivityLog[]> {
   const res = await fetch(`${API_BASE}/logs`);
+  return res.json();
+}
+
+export async function fetchMasterCVHtml(): Promise<{ html: string }> {
+  const res = await fetch(`${API_BASE}/profile/preview-html`);
   return res.json();
 }

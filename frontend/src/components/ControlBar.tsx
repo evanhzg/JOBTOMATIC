@@ -9,10 +9,12 @@ import {
   UserCircle, 
   Settings, 
   Terminal, 
-  CheckCircle2, 
   MessageSquareReply, 
   Sparkles,
-  Send
+  Send,
+  Layers,
+  Cpu,
+  CheckCheck
 } from 'lucide-react';
 import { SystemStats } from '../types';
 
@@ -22,6 +24,8 @@ interface ControlBarProps {
   setActiveTab: (tab: 'kanban' | 'search' | 'profile' | 'settings' | 'console') => void;
   onToggleAutopilot: () => void;
   onTogglePause: () => void;
+  onToggleBatchValidation: () => void;
+  onSelectProvider: (provider: 'agy' | 'claude' | 'codex') => void;
   isLoading: boolean;
 }
 
@@ -31,176 +35,224 @@ export const ControlBar: React.FC<ControlBarProps> = ({
   setActiveTab,
   onToggleAutopilot,
   onTogglePause,
+  onToggleBatchValidation,
+  onSelectProvider,
   isLoading
 }) => {
   const isAuto = stats?.autopilot_enabled ?? false;
   const isPaused = stats?.is_paused ?? false;
+  const isBatchValidation = stats?.wait_for_batch_validation ?? false;
+  const activeProvider = stats?.ai_provider || 'agy';
 
   return (
-    <header className="bg-slate-900 border-b border-slate-800 sticky top-0 z-40 shadow-xl">
-      {/* Top Bar: Brand, Global Automation Controls, Stats */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+    <header className="bg-pickle-dark/95 border-b border-pickle-border sticky top-0 z-40 backdrop-blur-md shadow-2xl">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           
-          {/* Logo & Status Indicator */}
+          {/* Logo & Pickles.team Brand Ethos */}
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-emerald-500/20">
-              <Bot className="h-6 w-6 text-slate-950 stroke-[2.5]" />
+            <div className="h-10 w-10 rounded-2xl bg-pickle-lime flex items-center justify-center shadow-lg shadow-pickle-lime/20 text-slate-950 text-xl font-black">
+              🥒
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-1.5">
-                  JobHunter <span className="text-emerald-400 font-extrabold">AGY</span>
+                <h1 className="text-xl font-extrabold tracking-tight text-white flex items-center gap-1.5 font-['Inter_Tight',sans-serif]">
+                  JobHunter <span className="text-pickle-lime font-black">Pickles</span>
                 </h1>
-                <span className="text-[10px] font-semibold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full flex items-center gap-1">
-                  <Sparkles className="h-2.5 w-2.5" /> Antigravity Sub
+                <span className="text-[10px] font-bold uppercase tracking-widest bg-pickle-lime/10 text-pickle-lime border border-pickle-lime/30 px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <Sparkles className="h-2.5 w-2.5" /> AI Autopilot
                 </span>
               </div>
-              <p className="text-xs text-slate-400">
-                Chasseur d'emploi & candidatures en pilote automatique
+              <p className="text-xs text-pickle-subtle">
+                Style Pickles.team — Chasseur d'emploi & CV sur-mesure
               </p>
             </div>
           </div>
 
-          {/* Quick Stats KPI Badges */}
-          <div className="flex items-center flex-wrap gap-2 text-xs">
-            <div className="bg-slate-800/80 border border-slate-700/60 rounded-lg px-3 py-1.5 flex items-center gap-2">
-              <span className="text-slate-400">Offres:</span>
-              <span className="font-bold text-white text-sm">{stats?.total_jobs ?? 0}</span>
-            </div>
+          {/* AI Engine Selector (AGY, Claude, Codex) */}
+          <div className="flex items-center bg-pickle-card border border-pickle-border rounded-full p-1 gap-1 self-start lg:self-auto">
+            <span className="text-[10px] uppercase font-bold text-pickle-subtle px-2.5 flex items-center gap-1">
+              <Cpu className="h-3 w-3 text-pickle-lime" /> Moteur :
+            </span>
 
-            <div className="bg-slate-800/80 border border-slate-700/60 rounded-lg px-3 py-1.5 flex items-center gap-2">
-              <Send className="h-3.5 w-3.5 text-blue-400" />
-              <span className="text-slate-400">Candidatures:</span>
-              <span className="font-bold text-blue-400 text-sm">{stats?.applied ?? 0}</span>
-            </div>
+            <button
+              onClick={() => onSelectProvider('agy')}
+              className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${
+                activeProvider === 'agy'
+                  ? 'bg-pickle-lime text-pickle-dark shadow-sm'
+                  : 'text-pickle-subtle hover:text-white'
+              }`}
+              title="Google Antigravity (Gemini 3.8 Flash via abonnement agy)"
+            >
+              🥒 AGY
+            </button>
 
-            {/* Glowing Answer Received KPI */}
-            <div className={`rounded-lg px-3 py-1.5 flex items-center gap-2 border transition-all ${
-              (stats?.answer_received ?? 0) > 0 
-                ? 'bg-emerald-950/80 border-emerald-500/50 shadow-lg shadow-emerald-500/10 animate-pulse' 
-                : 'bg-slate-800/80 border-slate-700/60'
-            }`}>
-              <MessageSquareReply className={`h-4 w-4 ${(stats?.answer_received ?? 0) > 0 ? 'text-emerald-400' : 'text-slate-400'}`} />
-              <span className={(stats?.answer_received ?? 0) > 0 ? 'text-emerald-300 font-medium' : 'text-slate-400'}>
-                Réponses Reçues:
-              </span>
-              <span className={`font-extrabold text-sm ${(stats?.answer_received ?? 0) > 0 ? 'text-emerald-300' : 'text-slate-300'}`}>
-                {stats?.answer_received ?? 0}
-              </span>
-            </div>
+            <button
+              onClick={() => onSelectProvider('claude')}
+              className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${
+                activeProvider === 'claude'
+                  ? 'bg-purple-500 text-white shadow-sm'
+                  : 'text-pickle-subtle hover:text-white'
+              }`}
+              title="Anthropic Claude Code"
+            >
+              🟣 Claude
+            </button>
 
-            <div className="bg-slate-800/80 border border-slate-700/60 rounded-lg px-3 py-1.5 flex items-center gap-2">
-              <span className="text-slate-400">Quota:</span>
-              <span className="font-semibold text-amber-400">
-                {stats?.applications_today ?? 0} / {stats?.daily_limit ?? 20}
-              </span>
-            </div>
+            <button
+              onClick={() => onSelectProvider('codex')}
+              className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${
+                activeProvider === 'codex'
+                  ? 'bg-emerald-500 text-slate-950 shadow-sm'
+                  : 'text-pickle-subtle hover:text-white'
+              }`}
+              title="OpenAI Codex CLI"
+            >
+              🟢 Codex
+            </button>
           </div>
 
-          {/* Master Controls: Autopilot Toggle & Pause Button */}
-          <div className="flex items-center gap-2">
+          {/* Master Controls: Batch Validation, Autopilot Toggle & Pause Button */}
+          <div className="flex items-center flex-wrap gap-2">
+            
+            {/* Batch Validation Toggle */}
+            <button
+              onClick={onToggleBatchValidation}
+              disabled={isLoading}
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold transition-all border ${
+                isBatchValidation
+                  ? 'bg-pickle-card text-pickle-lime border-pickle-lime/50 shadow-sm'
+                  : 'bg-pickle-card text-pickle-subtle border-pickle-border hover:border-neutral-700'
+              }`}
+              title="Si activé, le moteur prépare les candidatures et attend votre validation par lot avant l'envoi"
+            >
+              <CheckCheck className={`h-3.5 w-3.5 ${isBatchValidation ? 'text-pickle-lime' : 'text-neutral-500'}`} />
+              <span>Validation par lot :</span>
+              <span className={`px-1.5 py-0.2 rounded text-[10px] font-extrabold ${isBatchValidation ? 'bg-pickle-lime/20 text-pickle-lime' : 'bg-neutral-800 text-neutral-400'}`}>
+                {isBatchValidation ? 'OUI' : 'NON'}
+              </span>
+            </button>
+
             {/* Master Toggle */}
             <button
               onClick={onToggleAutopilot}
               disabled={isLoading}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-md active:scale-95 ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-black transition-all shadow-md active:scale-95 ${
                 isAuto
-                  ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-emerald-500/30'
-                  : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
+                  ? 'bg-pickle-lime hover:bg-pickle-limeHover text-pickle-dark shadow-pickle-lime/20'
+                  : 'bg-pickle-card hover:bg-pickle-cardHover text-slate-300 border border-pickle-border'
               }`}
               title={isAuto ? "Désactiver le pilote automatique" : "Activer le pilote automatique"}
             >
-              <Power className={`h-4 w-4 ${isAuto ? 'animate-spin-slow' : ''}`} />
-              <span>{isAuto ? 'AUTOPILOT ACTIF' : 'AUTOPILOT INACTIF'}</span>
-              <span className={`h-2 w-2 rounded-full ${isAuto ? 'bg-slate-950' : 'bg-slate-500'}`} />
+              <Power className="h-3.5 w-3.5" />
+              <span>{isAuto ? 'AUTOPILOT ACTIF' : 'AUTOPILOT OFF'}</span>
+              <span className={`h-2 w-2 rounded-full ${isAuto ? 'bg-pickle-dark animate-ping' : 'bg-neutral-600'}`} />
             </button>
 
-            {/* Instant Pause Button */}
+            {/* Pause Button */}
             <button
               onClick={onTogglePause}
               disabled={isLoading}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 border ${
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold transition-all active:scale-95 border ${
                 isPaused
-                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-md shadow-amber-500/20 animate-pulse'
-                  : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-md animate-pulse'
+                  : 'bg-pickle-card hover:bg-pickle-cardHover text-slate-300 border-pickle-border'
               }`}
               title={isPaused ? "Reprendre les activités" : "Mettre en pause immédiatement"}
             >
-              {isPaused ? <Play className="h-4 w-4 text-amber-400 fill-amber-400" /> : <Pause className="h-4 w-4" />}
+              {isPaused ? <Play className="h-3.5 w-3.5 text-amber-400 fill-amber-400" /> : <Pause className="h-3.5 w-3.5" />}
               <span>{isPaused ? 'EN PAUSE' : 'PAUSE'}</span>
             </button>
           </div>
 
         </div>
 
-        {/* Tab Navigation Menu */}
-        <nav className="flex items-center gap-1 mt-4 overflow-x-auto border-t border-slate-800/80 pt-2 scrollbar-none">
-          <button
-            onClick={() => setActiveTab('kanban')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors shrink-0 ${
-              activeTab === 'kanban'
-                ? 'bg-slate-800 text-emerald-400 border border-slate-700'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-            }`}
-          >
-            <LayoutDashboard className="h-4 w-4" />
-            <span>Tableau Kanban</span>
-          </button>
+        {/* Tab Navigation Menu & KPI Pills */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-4 border-t border-pickle-border pt-3">
+          <nav className="flex items-center gap-1 overflow-x-auto scrollbar-none">
+            <button
+              onClick={() => setActiveTab('kanban')}
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors shrink-0 ${
+                activeTab === 'kanban'
+                  ? 'bg-pickle-lime text-pickle-dark'
+                  : 'text-pickle-subtle hover:text-white hover:bg-pickle-card'
+              }`}
+            >
+              <LayoutDashboard className="h-3.5 w-3.5" />
+              <span>Tableau Kanban</span>
+            </button>
 
-          <button
-            onClick={() => setActiveTab('search')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors shrink-0 ${
-              activeTab === 'search'
-                ? 'bg-slate-800 text-emerald-400 border border-slate-700'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-            }`}
-          >
-            <Search className="h-4 w-4" />
-            <span>Recherche & Cibles (Rouen...)</span>
-            {stats && stats.active_queries > 0 && (
-              <span className="bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded-full text-[10px]">
-                {stats.active_queries}
-              </span>
-            )}
-          </button>
+            <button
+              onClick={() => setActiveTab('search')}
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors shrink-0 ${
+                activeTab === 'search'
+                  ? 'bg-pickle-lime text-pickle-dark'
+                  : 'text-pickle-subtle hover:text-white hover:bg-pickle-card'
+              }`}
+            >
+              <Search className="h-3.5 w-3.5" />
+              <span>Cibles & Métiers (Rouen...)</span>
+            </button>
 
-          <button
-            onClick={() => setActiveTab('profile')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors shrink-0 ${
-              activeTab === 'profile'
-                ? 'bg-slate-800 text-emerald-400 border border-slate-700'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-            }`}
-          >
-            <UserCircle className="h-4 w-4" />
-            <span>Mon Profil & CV Maître</span>
-          </button>
+            <button
+              onClick={() => setActiveTab('profile')}
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors shrink-0 ${
+                activeTab === 'profile'
+                  ? 'bg-pickle-lime text-pickle-dark'
+                  : 'text-pickle-subtle hover:text-white hover:bg-pickle-card'
+              }`}
+            >
+              <UserCircle className="h-3.5 w-3.5" />
+              <span>CV Maître & Aperçu</span>
+            </button>
 
-          <button
-            onClick={() => setActiveTab('settings')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors shrink-0 ${
-              activeTab === 'settings'
-                ? 'bg-slate-800 text-emerald-400 border border-slate-700'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-            }`}
-          >
-            <Settings className="h-4 w-4" />
-            <span>Paramètres & Gmail</span>
-          </button>
+            <button
+              onClick={() => setActiveTab('settings')}
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors shrink-0 ${
+                activeTab === 'settings'
+                  ? 'bg-pickle-lime text-pickle-dark'
+                  : 'text-pickle-subtle hover:text-white hover:bg-pickle-card'
+              }`}
+            >
+              <Settings className="h-3.5 w-3.5" />
+              <span>Paramètres & Gmail</span>
+            </button>
 
-          <button
-            onClick={() => setActiveTab('console')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors shrink-0 ${
-              activeTab === 'console'
-                ? 'bg-slate-800 text-emerald-400 border border-slate-700'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-            }`}
-          >
-            <Terminal className="h-4 w-4" />
-            <span>Logs & Moniteur AGY</span>
-          </button>
-        </nav>
+            <button
+              onClick={() => setActiveTab('console')}
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors shrink-0 ${
+                activeTab === 'console'
+                  ? 'bg-pickle-lime text-pickle-dark'
+                  : 'text-pickle-subtle hover:text-white hover:bg-pickle-card'
+              }`}
+            >
+              <Terminal className="h-3.5 w-3.5" />
+              <span>Moniteur & Logs</span>
+            </button>
+          </nav>
+
+          {/* Quick Counter Chips */}
+          <div className="flex items-center gap-2 text-xs overflow-x-auto scrollbar-none">
+            <span className="bg-pickle-card border border-pickle-border rounded-full px-3 py-1 text-pickle-subtle flex items-center gap-1.5 text-[11px]">
+              Offres: <strong className="text-white font-bold">{stats?.total_jobs ?? 0}</strong>
+            </span>
+
+            <span className="bg-pickle-card border border-pickle-border rounded-full px-3 py-1 text-pickle-subtle flex items-center gap-1.5 text-[11px]">
+              <Send className="h-3 w-3 text-blue-400" />
+              Candidatés: <strong className="text-blue-400 font-bold">{stats?.applied ?? 0}</strong>
+            </span>
+
+            <span className={`rounded-full px-3 py-1 text-[11px] font-bold flex items-center gap-1.5 border transition-all ${
+              (stats?.answer_received ?? 0) > 0
+                ? 'bg-pickle-lime text-pickle-dark border-pickle-lime shadow-md shadow-pickle-lime/30 animate-pulse'
+                : 'bg-pickle-card border-pickle-border text-pickle-subtle'
+            }`}>
+              <MessageSquareReply className="h-3 w-3" />
+              Réponses : {stats?.answer_received ?? 0}
+            </span>
+          </div>
+        </div>
+
       </div>
     </header>
   );
