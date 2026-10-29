@@ -44,6 +44,7 @@ export interface Job {
   answer_at?: string;
   answer_snippet?: string;
   answer_classification?: 'INTERVIEW' | 'INFO_REQUEST' | 'ACKNOWLEDGMENT' | 'REJECTION';
+  is_school_promotion?: boolean;
   cv_improvement_suggestions?: CVImprovementSuggestions | null;
   created_at: string;
   updated_at: string;
@@ -94,6 +95,22 @@ export interface EfficiencyReport {
 export interface MetricVariant {
   title: string;
   content: string;
+  pdf_url?: string | null;
+}
+
+export interface TranslatedCVResponse {
+  status: string;
+  target_language: string;
+  pdf_url: string;
+  filename: string;
+  translated_data: {
+    headline: string;
+    summary: string;
+    skills: string[];
+    experiences: Experience[];
+    education: Education[];
+    languages: string[];
+  };
 }
 
 export interface MetricVariantsResponse {

@@ -4,7 +4,7 @@ import os
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional
 import aiosqlite
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -550,7 +550,7 @@ async def preview_base_cv_pdf():
                     pass
 
     pdf_path = await cv_renderer.generate_base_cv_pdf(profile)
-    return FileResponse(pdf_path, media_type="application/pdf", filename="CV_Master.pdf")
+    return FileResponse(pdf_path, media_type="application/pdf", content_disposition_type="inline")
 
 @app.get("/api/profile/preview-html")
 async def preview_base_cv_html():
@@ -628,7 +628,7 @@ async def upload_imported_cv(file: UploadFile = File(...)):
 
 @app.get("/api/profile/original-cv")
 async def get_original_cv():
-    """Serves the authentic uploaded original CV file so it retains 100% of its native design and graphics."""
+    """Serves the authentic uploaded original CV file inline so it does not auto-download."""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cur = await db.execute("SELECT original_cv_path, original_cv_filename FROM profile WHERE id = 1")
@@ -638,7 +638,7 @@ async def get_original_cv():
         
         path = row["original_cv_path"]
         media_type = "application/pdf" if path.lower().endswith(".pdf") else "application/octet-stream"
-        return FileResponse(path, media_type=media_type, filename=row["original_cv_filename"] or "cv_original.pdf")
+        return FileResponse(path, media_type=media_type, content_disposition_type="inline")
 
 @app.post("/api/profile/inspect-efficiency")
 async def inspect_cv_efficiency():
@@ -663,16 +663,77 @@ async def inspect_cv_efficiency():
 
 @app.post("/api/profile/generate-variants")
 async def generate_variants(payload: MetricVariantRequest):
-    """Generates 3 maximum-score variants for any sub-metric scored below 80% threshold."""
+    """Generates 3 maximum-score variants and compiles visual proposal PDFs for direct preview."""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cur = await db.execute("SELECT * FROM profile WHERE id = 1")
         row = await cur.fetchone()
         profile = dict(row)
+        for f in ["skills", "experiences", "education", "languages", "preferences"]:
+            if isinstance(profile.get(f), str):
+                try:
+                    profile[f] = json.loads(profile[f])
+                except Exception:
+                    pass
 
     text = profile.get("original_cv_text") or f"{profile.get('summary')} {profile.get('experiences')}"
     variants_data = await ai_bridge.generate_metric_variants(payload.metric_id, text, profile.get("headline", "Développeur"))
+
+    # For each variant, generate a visual PDF proposal
+    for idx, var in enumerate(variants_data.get("variants", [])):
+        try:
+            pdf_path = await cv_renderer.generate_variant_proposal_pdf(
+                profile, var.get("title", f"Variante {idx+1}"), var.get("content", ""), payload.metric_id
+            )
+            var["pdf_url"] = f"/api/profile/proposal-pdf?file={os.path.basename(pdf_path)}"
+        except Exception as e:
+            var["pdf_url"] = None
+
     return variants_data
+
+@app.get("/api/profile/proposal-pdf")
+async def get_proposal_pdf(file: str):
+    """Serves a visual PDF proposal inline for instant inspection."""
+    path = CVS_DIR / file
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="PDF proposition non trouvé")
+    return FileResponse(str(path), media_type="application/pdf", content_disposition_type="inline")
+
+@app.post("/api/profile/translate-cv")
+async def translate_cv(payload: Dict[str, Any] = Body(...)):
+    """Translates the profile to English or French, compiles a visual PDF, and returns the result."""
+    target_lang = payload.get("target_language", "en") # "en" or "fr"
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute("SELECT * FROM profile WHERE id = 1")
+        profile = dict(await cur.fetchone())
+        for f in ["skills", "experiences", "education", "languages", "preferences"]:
+            if isinstance(profile.get(f), str):
+                try:
+                    profile[f] = json.loads(profile[f])
+                except Exception:
+                    pass
+
+    translated_data = await ai_bridge.translate_cv(profile, target_lang)
+    pdf_path = await cv_renderer.generate_translated_cv_pdf(profile, translated_data, target_lang)
+    filename = os.path.basename(pdf_path)
+
+    await log_activity("SUCCESS", f"Traduction du CV en {target_lang.upper()} terminée avec PDF visuel.")
+    return {
+        "status": "ok",
+        "target_language": target_lang,
+        "pdf_url": f"/api/profile/translated-pdf?file={filename}",
+        "filename": filename,
+        "translated_data": translated_data
+    }
+
+@app.get("/api/profile/translated-pdf")
+async def get_translated_pdf(file: str):
+    """Serves a translated CV PDF inline."""
+    path = CVS_DIR / file
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="CV traduit non trouvé")
+    return FileResponse(str(path), media_type="application/pdf", content_disposition_type="inline")
 
 # Settings Endpoints
 

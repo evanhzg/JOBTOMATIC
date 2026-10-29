@@ -12,9 +12,11 @@ import {
   Sparkles,
   Send,
   Cpu,
-  CheckCheck
+  CheckCheck,
+  Globe
 } from 'lucide-react';
 import { SystemStats } from '../types';
+import { Language, translations } from '../i18n';
 import { WashRotomMascot } from './WashRotomMascot';
 
 interface ControlBarProps {
@@ -26,6 +28,8 @@ interface ControlBarProps {
   onToggleBatchValidation: () => void;
   onSelectProvider: (provider: 'agy' | 'claude' | 'codex') => void;
   isLoading: boolean;
+  currentLang: Language;
+  onToggleLang: () => void;
 }
 
 export const ControlBar: React.FC<ControlBarProps> = ({
@@ -36,78 +40,97 @@ export const ControlBar: React.FC<ControlBarProps> = ({
   onTogglePause,
   onToggleBatchValidation,
   onSelectProvider,
-  isLoading
+  isLoading,
+  currentLang,
+  onToggleLang
 }) => {
   const isAuto = stats?.autopilot_enabled ?? false;
   const isPaused = stats?.is_paused ?? false;
   const isBatchValidation = stats?.wait_for_batch_validation ?? false;
   const activeProvider = stats?.ai_provider || 'agy';
+  const t = translations[currentLang];
 
   return (
-    <header className="bg-[#0C0C0C] border-b border-[#242424] sticky top-0 z-40">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+    <header className="bg-[#FFFFFF] border-b border-[#E2E2DC] sticky top-0 z-40 shadow-sm font-mono">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 py-2.5">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
           
-          {/* Logo & Hand-drawn Motisma Dishwasher (Wash Rotom) Mascot */}
+          {/* Logo & Motisma Brand Emblem */}
           <div className="flex items-center gap-3">
-            <div className="border border-[#2A2A2A] bg-[#141414] p-1.5 flex items-center justify-center">
-              <WashRotomMascot size={38} />
+            <div className="border border-[#D4D4CE] bg-[#FAF9F6] p-1.5 flex items-center justify-center">
+              <WashRotomMascot size={36} />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl font-black tracking-wider text-white font-mono uppercase">
-                  JOB<span className="text-[#C5EA4B]">TOMATIC</span>
+                <h1 className="text-xl font-black tracking-wider text-[#18181B] font-mono uppercase">
+                  JOB<span className="text-[#5F7A48]">TOMATIC</span>
                 </h1>
-                <span className="text-[10px] font-mono font-bold uppercase tracking-widest bg-[#1B1B1B] text-[#C5EA4B] border border-[#333333] px-2 py-0.5 flex items-center gap-1">
-                  <Sparkles className="h-2.5 w-2.5 text-[#C5EA4B]" /> [AUTOPILOT]
+                <span className="text-[10px] font-mono font-bold uppercase tracking-widest bg-[#EEF3E9] text-[#5F7A48] border border-[#D4E0CD] px-2 py-0.5 flex items-center gap-1">
+                  <Sparkles className="h-2.5 w-2.5 text-[#5F7A48]" /> [AUTOPILOT]
                 </span>
               </div>
-              <p className="text-[11px] font-mono text-[#8E8E8E] tracking-tight">
-                Mascotte Motisma Lave-Vaisselle — Candidatures Auto & CV Sur-Mesure
+              <p className="text-[11px] font-mono text-[#71717A] tracking-tight">
+                {t.app_subtitle}
               </p>
             </div>
           </div>
 
-          {/* AI Engine Switcher (AGY / Claude / Codex) - Pickles boxy brutalist selector */}
-          <div className="flex items-center bg-[#141414] border border-[#262626] p-0.5 gap-0.5 self-start lg:self-auto">
-            <span className="text-[10px] font-mono uppercase font-bold text-[#777777] px-2 flex items-center gap-1">
-              <Cpu className="h-3 w-3 text-[#C5EA4B]" /> IA:
-            </span>
+          {/* AI Engine Switcher (AGY / Claude / Codex) & Language Switcher */}
+          <div className="flex items-center gap-3 flex-wrap">
+            
+            {/* AI Engine Selector */}
+            <div className="flex items-center bg-[#FAF9F6] border border-[#E2E2DC] p-0.5 gap-0.5">
+              <span className="text-[10px] font-mono uppercase font-bold text-[#71717A] px-2 flex items-center gap-1">
+                <Cpu className="h-3 w-3 text-[#5F7A48]" /> {t.moteur_label}
+              </span>
 
-            <button
-              onClick={() => onSelectProvider('agy')}
-              className={`px-3 py-1 font-mono text-xs font-bold transition-all border ${
-                activeProvider === 'agy'
-                  ? 'bg-[#C5EA4B] text-[#0C0C0C] border-[#C5EA4B]'
-                  : 'bg-transparent text-[#8E8E8E] border-transparent hover:text-white'
-              }`}
-              title="Google Antigravity CLI (Gemini 3.8 Flash)"
-            >
-              [AGY]
-            </button>
+              <button
+                onClick={() => onSelectProvider('agy')}
+                className={`px-2.5 py-1 font-mono text-xs font-bold transition-all border ${
+                  activeProvider === 'agy'
+                    ? 'bg-[#5F7A48] text-[#FFFFFF] border-[#5F7A48]'
+                    : 'bg-transparent text-[#71717A] border-transparent hover:text-[#18181B]'
+                }`}
+                title="Google Antigravity CLI (Gemini 3.8 Flash)"
+              >
+                [AGY]
+              </button>
 
-            <button
-              onClick={() => onSelectProvider('claude')}
-              className={`px-3 py-1 font-mono text-xs font-bold transition-all border ${
-                activeProvider === 'claude'
-                  ? 'bg-[#B070FF] text-black border-[#B070FF]'
-                  : 'bg-transparent text-[#8E8E8E] border-transparent hover:text-white'
-              }`}
-              title="Anthropic Claude"
-            >
-              [CLAUDE]
-            </button>
+              <button
+                onClick={() => onSelectProvider('claude')}
+                className={`px-2.5 py-1 font-mono text-xs font-bold transition-all border ${
+                  activeProvider === 'claude'
+                    ? 'bg-[#8A5FB8] text-[#FFFFFF] border-[#8A5FB8]'
+                    : 'bg-transparent text-[#71717A] border-transparent hover:text-[#18181B]'
+                }`}
+                title="Anthropic Claude"
+              >
+                [CLAUDE]
+              </button>
 
+              <button
+                onClick={() => onSelectProvider('codex')}
+                className={`px-2.5 py-1 font-mono text-xs font-bold transition-all border ${
+                  activeProvider === 'codex'
+                    ? 'bg-[#18181B] text-[#FFFFFF] border-[#18181B]'
+                    : 'bg-transparent text-[#71717A] border-transparent hover:text-[#18181B]'
+                }`}
+                title="OpenAI Codex CLI"
+              >
+                [CODEX]
+              </button>
+            </div>
+
+            {/* Language Switcher (FR / EN) */}
             <button
-              onClick={() => onSelectProvider('codex')}
-              className={`px-3 py-1 font-mono text-xs font-bold transition-all border ${
-                activeProvider === 'codex'
-                  ? 'bg-[#22C55E] text-black border-[#22C55E]'
-                  : 'bg-transparent text-[#8E8E8E] border-transparent hover:text-white'
-              }`}
-              title="OpenAI Codex CLI"
+              onClick={onToggleLang}
+              className="flex items-center gap-1.5 px-2.5 py-1 bg-[#FAF9F6] hover:bg-[#F2F2EC] text-[#18181B] border border-[#E2E2DC] text-xs font-bold transition-all"
+              title="Changer la langue du site (FR / EN)"
             >
-              [CODEX]
+              <Globe className="h-3.5 w-3.5 text-[#5F7A48]" />
+              <span className={currentLang === 'fr' ? 'font-black text-[#5F7A48]' : 'text-[#71717A]'}>FR</span>
+              <span className="text-[#D4D4CE]">/</span>
+              <span className={currentLang === 'en' ? 'font-black text-[#5F7A48]' : 'text-[#71717A]'}>EN</span>
             </button>
           </div>
 
@@ -120,15 +143,15 @@ export const ControlBar: React.FC<ControlBarProps> = ({
               disabled={isLoading}
               className={`flex items-center gap-1.5 px-3 py-1.5 font-mono text-xs font-bold transition-all border ${
                 isBatchValidation
-                  ? 'bg-[#181818] text-[#C5EA4B] border-[#C5EA4B]'
-                  : 'bg-[#141414] text-[#8E8E8E] border-[#262626] hover:border-[#444444]'
+                  ? 'bg-[#EEF3E9] text-[#5F7A48] border-[#5F7A48]'
+                  : 'bg-[#FAF9F6] text-[#71717A] border-[#E2E2DC] hover:border-[#A1A1AA]'
               }`}
-              title="Si activé, l'IA génère les CVs et attend votre clic de validation avant d'envoyer la candidature"
+              title="Si activé, l'IA prépare les CVs et attend votre clic de validation avant d'envoyer la candidature"
             >
-              <CheckCheck className={`h-3.5 w-3.5 ${isBatchValidation ? 'text-[#C5EA4B]' : 'text-neutral-500'}`} />
-              <span>BATCH VALIDATION:</span>
-              <span className={`px-1 font-mono text-[10px] ${isBatchValidation ? 'bg-[#C5EA4B] text-black font-black' : 'bg-[#222222] text-[#888888]'}`}>
-                {isBatchValidation ? 'ON' : 'OFF'}
+              <CheckCheck className={`h-3.5 w-3.5 ${isBatchValidation ? 'text-[#5F7A48]' : 'text-neutral-400'}`} />
+              <span>{t.batch_validation}</span>
+              <span className={`px-1.5 py-0.2 font-mono text-[10px] ${isBatchValidation ? 'bg-[#5F7A48] text-white font-black' : 'bg-[#E4E4E7] text-[#71717A]'}`}>
+                {isBatchValidation ? t.batch_on : t.batch_off}
               </span>
             </button>
 
@@ -138,14 +161,13 @@ export const ControlBar: React.FC<ControlBarProps> = ({
               disabled={isLoading}
               className={`flex items-center gap-2 px-3.5 py-1.5 font-mono text-xs font-black transition-all border ${
                 isAuto
-                  ? 'bg-[#C5EA4B] text-[#0C0C0C] border-[#C5EA4B] hover:bg-[#d6f859]'
-                  : 'bg-[#141414] text-[#CCCCCC] border-[#262626] hover:border-[#444444]'
+                  ? 'bg-[#5F7A48] text-white border-[#5F7A48] hover:bg-[#4E653A]'
+                  : 'bg-[#FAF9F6] text-[#18181B] border-[#D4D4D8] hover:border-[#18181B]'
               }`}
-              title={isAuto ? "Arrêter le cycle de prospection automatique" : "Lancer le cycle de prospection automatique"}
             >
               <Power className="h-3.5 w-3.5" />
-              <span>{isAuto ? 'AUTOPILOT [ACTIF]' : 'AUTOPILOT [INACTIF]'}</span>
-              <span className={`h-2 w-2 ${isAuto ? 'bg-black animate-ping' : 'bg-[#444444]'}`} />
+              <span>{isAuto ? t.autopilot_active : t.autopilot_inactive}</span>
+              <span className={`h-2 w-2 ${isAuto ? 'bg-white animate-ping' : 'bg-[#A1A1AA]'}`} />
             </button>
 
             {/* Instant Pause Button */}
@@ -154,100 +176,99 @@ export const ControlBar: React.FC<ControlBarProps> = ({
               disabled={isLoading}
               className={`flex items-center gap-1.5 px-3 py-1.5 font-mono text-xs font-bold transition-all border ${
                 isPaused
-                  ? 'bg-[#FA5F11] text-black border-[#FA5F11] animate-pulse'
-                  : 'bg-[#141414] text-[#CCCCCC] border-[#262626] hover:border-[#444444]'
+                  ? 'bg-[#B45309] text-white border-[#B45309] animate-pulse'
+                  : 'bg-[#FAF9F6] text-[#18181B] border-[#D4D4D8] hover:border-[#18181B]'
               }`}
-              title={isPaused ? "Reprendre les opérations" : "Mettre en pause immédiate toutes les actions"}
             >
-              {isPaused ? <Play className="h-3.5 w-3.5 fill-black" /> : <Pause className="h-3.5 w-3.5" />}
-              <span>{isPaused ? 'EN PAUSE' : 'PAUSE'}</span>
+              {isPaused ? <Play className="h-3.5 w-3.5 fill-white" /> : <Pause className="h-3.5 w-3.5" />}
+              <span>{isPaused ? t.pause_active : t.pause_btn}</span>
             </button>
           </div>
 
         </div>
 
-        {/* Technical Brutalist Pickles Navigation Bar */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-3 border-t border-[#242424] pt-2.5">
+        {/* Technical Navigation Bar & KPI Blocks */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-2.5 border-t border-[#E2E2DC] pt-2">
           <nav className="flex items-center gap-1 overflow-x-auto scrollbar-none font-mono">
             <button
               onClick={() => setActiveTab('kanban')}
               className={`flex items-center gap-1.5 px-3 py-1 text-xs font-bold transition-all border ${
                 activeTab === 'kanban'
-                  ? 'bg-[#1B1B1B] text-[#C5EA4B] border-[#C5EA4B]'
-                  : 'bg-transparent text-[#8E8E8E] border-transparent hover:text-white hover:bg-[#141414]'
+                  ? 'bg-[#18181B] text-[#FFFFFF] border-[#18181B]'
+                  : 'bg-transparent text-[#71717A] border-transparent hover:text-[#18181B] hover:bg-[#F2F2EC]'
               }`}
             >
               <LayoutDashboard className="h-3.5 w-3.5" />
-              <span>[01] KANBAN</span>
+              <span>{t.tab_kanban}</span>
             </button>
 
             <button
               onClick={() => setActiveTab('search')}
               className={`flex items-center gap-1.5 px-3 py-1 text-xs font-bold transition-all border ${
                 activeTab === 'search'
-                  ? 'bg-[#1B1B1B] text-[#C5EA4B] border-[#C5EA4B]'
-                  : 'bg-transparent text-[#8E8E8E] border-transparent hover:text-white hover:bg-[#141414]'
+                  ? 'bg-[#18181B] text-[#FFFFFF] border-[#18181B]'
+                  : 'bg-transparent text-[#71717A] border-transparent hover:text-[#18181B] hover:bg-[#F2F2EC]'
               }`}
             >
               <Search className="h-3.5 w-3.5" />
-              <span>[02] CIBLES</span>
+              <span>{t.tab_search}</span>
             </button>
 
             <button
               onClick={() => setActiveTab('profile')}
               className={`flex items-center gap-1.5 px-3 py-1 text-xs font-bold transition-all border ${
                 activeTab === 'profile'
-                  ? 'bg-[#1B1B1B] text-[#C5EA4B] border-[#C5EA4B]'
-                  : 'bg-transparent text-[#8E8E8E] border-transparent hover:text-white hover:bg-[#141414]'
+                  ? 'bg-[#18181B] text-[#FFFFFF] border-[#18181B]'
+                  : 'bg-transparent text-[#71717A] border-transparent hover:text-[#18181B] hover:bg-[#F2F2EC]'
               }`}
             >
               <UserCircle className="h-3.5 w-3.5" />
-              <span>[03] CV ORIGINAL & AUDIT</span>
+              <span>{t.tab_profile}</span>
             </button>
 
             <button
               onClick={() => setActiveTab('settings')}
               className={`flex items-center gap-1.5 px-3 py-1 text-xs font-bold transition-all border ${
                 activeTab === 'settings'
-                  ? 'bg-[#1B1B1B] text-[#C5EA4B] border-[#C5EA4B]'
-                  : 'bg-transparent text-[#8E8E8E] border-transparent hover:text-white hover:bg-[#141414]'
+                  ? 'bg-[#18181B] text-[#FFFFFF] border-[#18181B]'
+                  : 'bg-transparent text-[#71717A] border-transparent hover:text-[#18181B] hover:bg-[#F2F2EC]'
               }`}
             >
               <Settings className="h-3.5 w-3.5" />
-              <span>[04] PARAMÈTRES</span>
+              <span>{t.tab_settings}</span>
             </button>
 
             <button
               onClick={() => setActiveTab('console')}
               className={`flex items-center gap-1.5 px-3 py-1 text-xs font-bold transition-all border ${
                 activeTab === 'console'
-                  ? 'bg-[#1B1B1B] text-[#C5EA4B] border-[#C5EA4B]'
-                  : 'bg-transparent text-[#8E8E8E] border-transparent hover:text-white hover:bg-[#141414]'
+                  ? 'bg-[#18181B] text-[#FFFFFF] border-[#18181B]'
+                  : 'bg-transparent text-[#71717A] border-transparent hover:text-[#18181B] hover:bg-[#F2F2EC]'
               }`}
             >
               <Terminal className="h-3.5 w-3.5" />
-              <span>[05] CONSOLE</span>
+              <span>{t.tab_console}</span>
             </button>
           </nav>
 
-          {/* KPI Blocks (Not Rounded, Boxy Technical Grids) */}
+          {/* KPI Blocks (Pickles.app crisp style) */}
           <div className="flex items-center gap-2 font-mono text-xs overflow-x-auto scrollbar-none">
-            <span className="bg-[#141414] border border-[#242424] px-2.5 py-1 text-[#8E8E8E] flex items-center gap-1 text-[11px]">
-              OFFRES: <strong className="text-white font-bold">{stats?.total_jobs ?? 0}</strong>
+            <span className="bg-[#FAF9F6] border border-[#E2E2DC] px-2.5 py-1 text-[#71717A] flex items-center gap-1 text-[11px]">
+              {t.stat_jobs} <strong className="text-[#18181B] font-bold">{stats?.total_jobs ?? 0}</strong>
             </span>
 
-            <span className="bg-[#141414] border border-[#242424] px-2.5 py-1 text-[#8E8E8E] flex items-center gap-1 text-[11px]">
-              <Send className="h-3 w-3 text-blue-400" />
-              CANDIDATÉS: <strong className="text-blue-400 font-bold">{stats?.applied ?? 0}</strong>
+            <span className="bg-[#FAF9F6] border border-[#E2E2DC] px-2.5 py-1 text-[#71717A] flex items-center gap-1 text-[11px]">
+              <Send className="h-3 w-3 text-blue-600" />
+              {t.stat_applied} <strong className="text-blue-700 font-bold">{stats?.applied ?? 0}</strong>
             </span>
 
             <span className={`px-2.5 py-1 text-[11px] font-bold flex items-center gap-1.5 border transition-all ${
               (stats?.answer_received ?? 0) > 0
-                ? 'bg-[#1A2610] text-[#C5EA4B] border-[#C5EA4B]'
-                : 'bg-[#141414] border-[#242424] text-[#8E8E8E]'
+                ? 'bg-[#EEF3E9] text-[#5F7A48] border-[#5F7A48]'
+                : 'bg-[#FAF9F6] border-[#E2E2DC] text-[#71717A]'
             }`}>
               <MessageSquareReply className="h-3 w-3" />
-              RÉPONSES: <strong>{stats?.answer_received ?? 0}</strong>
+              {t.stat_replies} <strong>{stats?.answer_received ?? 0}</strong>
             </span>
           </div>
         </div>

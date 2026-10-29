@@ -99,17 +99,26 @@ class JobHunterScheduler:
             c_types = json.loads(q["contract_types"]) if isinstance(q.get("contract_types"), str) else (q.get("contract_types") or [])
             plats = json.loads(q["platforms"]) if isinstance(q.get("platforms"), str) else (q.get("platforms") or [])
 
-            postings = await run_all_scrapers(
-                query=q["query_text"],
-                location=q["location"],
-                radius_km=q.get("radius_km", 25),
-                contract_types=c_types,
-                platforms=plats
-            )
+            # Support multiple cities separated by commas or semicolons
+            raw_locations = q.get("location", "Rouen")
+            city_list = [loc.strip() for loc in raw_locations.replace(";", ",").split(",") if loc.strip()]
+            if not city_list:
+                city_list = ["Rouen"]
+
+            all_postings = []
+            for target_city in city_list:
+                postings = await run_all_scrapers(
+                    query=q["query_text"],
+                    location=target_city,
+                    radius_km=q.get("radius_km", 25),
+                    contract_types=c_types,
+                    platforms=plats
+                )
+                all_postings.extend(postings)
 
             # Insert new postings into database
             async with aiosqlite.connect(DB_PATH) as db:
-                for p in postings:
+                for p in all_postings:
                     try:
                         await db.execute("""
                             INSERT INTO jobs (external_id, title, company, location, contract_type, description, url, contact_email, salary, source, apply_method, status)
@@ -119,7 +128,7 @@ class JobHunterScheduler:
                         pass # already exists
 
                 now_iso = datetime.now().isoformat()
-                await db.execute("UPDATE search_queries SET last_run_at = ?, total_found = total_found + ? WHERE id = ?", (now_iso, len(postings), q["id"]))
+                await db.execute("UPDATE search_queries SET last_run_at = ?, total_found = total_found + ? WHERE id = ?", (now_iso, len(all_postings), q["id"]))
                 await db.commit()
 
         # 2. Process pending discovered jobs (fit analysis and CV tailoring)

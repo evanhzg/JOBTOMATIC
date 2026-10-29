@@ -9,6 +9,7 @@ import {
   ActivityLog,
   CVImprovementSuggestions
 } from './types';
+import { Language } from './i18n';
 import * as api from './api';
 import { ControlBar } from './components/ControlBar';
 import { KanbanBoard } from './components/KanbanBoard';
@@ -32,6 +33,9 @@ export const App: React.FC = () => {
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [cvPreviewTarget, setCvPreviewTarget] = useState<{ job?: Job; isBase?: boolean } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [currentLang, setCurrentLang] = useState<Language>('fr');
+
+  const handleToggleLang = () => setCurrentLang(prev => prev === 'fr' ? 'en' : 'fr');
 
   const loadData = useCallback(async () => {
     try {
@@ -242,8 +246,8 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-pickle-dark text-pickle-light flex flex-col font-sans selection:bg-pickle-lime selection:text-pickle-dark">
-      {/* Pickles.team Inspired Control Bar */}
+    <div className="min-h-screen bg-[#F4F4F0] text-[#18181B] flex flex-col font-sans selection:bg-[#5F7A48] selection:text-white">
+      {/* Pickles.app Style Header & Control Bar */}
       <ControlBar
         stats={stats}
         activeTab={activeTab}
@@ -253,10 +257,12 @@ export const App: React.FC = () => {
         onToggleBatchValidation={handleToggleBatchValidation}
         onSelectProvider={handleSelectProvider}
         isLoading={isLoading}
+        currentLang={currentLang}
+        onToggleLang={handleToggleLang}
       />
 
       {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-5">
+      <main className="flex-1 max-w-[1600px] w-full mx-auto px-3 sm:px-5 py-3.5">
         {activeTab === 'kanban' && (
           <KanbanBoard
             jobs={jobs}
@@ -269,6 +275,7 @@ export const App: React.FC = () => {
             onSimulateReply={handleSimulateReply}
             onMoveStatus={handleMoveStatus}
             onBatchValidate={handleBatchValidate}
+            currentLang={currentLang}
           />
         )}
 
@@ -279,6 +286,7 @@ export const App: React.FC = () => {
             onDeleteQuery={handleDeleteQuery}
             onRunSearchNow={handleRunSearchNow}
             isLoading={isLoading}
+            currentLang={currentLang}
           />
         )}
 
@@ -287,6 +295,7 @@ export const App: React.FC = () => {
             profile={profile}
             onSaveProfile={handleSaveProfile}
             isLoading={isLoading}
+            currentLang={currentLang}
           />
         )}
 
@@ -326,6 +335,7 @@ export const App: React.FC = () => {
           onImproveCV={handleImproveCV}
           onApplyImprovements={handleApplyImprovements}
           onEditBaseProfile={() => setActiveTab('profile')}
+          currentLang={currentLang}
         />
       )}
     </div>

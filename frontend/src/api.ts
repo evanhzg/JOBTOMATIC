@@ -175,3 +175,15 @@ export async function generateMetricVariants(metricId: string): Promise<any> {
   });
   return res.json();
 }
+
+export async function translateCv(targetLanguage: string = 'en'): Promise<any> {
+  const res = await fetch(`${API_BASE}/profile/translate-cv`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ target_language: targetLanguage })
+  });
+  if (!res.ok) {
+    throw new Error('Erreur lors de la traduction du CV');
+  }
+  return res.json();
+}

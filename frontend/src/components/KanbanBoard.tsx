@@ -15,6 +15,7 @@ import {
   Layers,
   CheckCheck
 } from 'lucide-react';
+import { Language, translations } from '../i18n';
 
 interface KanbanBoardProps {
   jobs: Job[];
@@ -27,16 +28,8 @@ interface KanbanBoardProps {
   onSimulateReply: (jobId: number) => void;
   onMoveStatus: (jobId: number, newStatus: JobStatus) => void;
   onBatchValidate: () => Promise<void>;
+  currentLang?: Language;
 }
-
-const COLUMNS: { id: JobStatus; title: string; icon: React.ReactNode; color: string }[] = [
-  { id: 'discovered', title: 'Découvertes', icon: <Inbox className="h-4 w-4" />, color: 'border-[#242424]' },
-  { id: 'tailored', title: 'CV Prêts / Validation', icon: <Sparkles className="h-4 w-4 text-[#C5EA4B]" />, color: 'border-[#C5EA4B]/40' },
-  { id: 'applied', title: 'Candidaté', icon: <Send className="h-4 w-4 text-blue-400" />, color: 'border-blue-500/40' },
-  { id: 'answer_received', title: 'Réponse Reçue !', icon: <MessageSquareReply className="h-4 w-4 text-[#C5EA4B]" />, color: 'border-[#C5EA4B]' },
-  { id: 'interview', title: 'Entretiens', icon: <CheckCircle2 className="h-4 w-4 text-purple-400" />, color: 'border-purple-500/40' },
-  { id: 'archived', title: 'Archivées', icon: <Archive className="h-4 w-4 text-[#555555]" />, color: 'border-[#242424]' },
-];
 
 export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   jobs,
@@ -48,12 +41,24 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   onTailor,
   onSimulateReply,
   onMoveStatus,
-  onBatchValidate
+  onBatchValidate,
+  currentLang = 'fr'
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [contractFilter, setContractFilter] = useState<string>('all');
   const [minScore, setMinScore] = useState<number>(0);
   const [isValidatingBatch, setIsValidatingBatch] = useState(false);
+
+  const t = translations[currentLang];
+
+  const COLUMNS: { id: JobStatus; title: string; icon: React.ReactNode; color: string }[] = [
+    { id: 'discovered', title: t.col_discovered, icon: <Inbox className="h-3.5 w-3.5 text-[#71717A]" />, color: 'border-[#D4D4D8]' },
+    { id: 'tailored', title: t.col_tailored, icon: <Sparkles className="h-3.5 w-3.5 text-[#5F7A48]" />, color: 'border-[#5F7A48]/50' },
+    { id: 'applied', title: t.col_applied, icon: <Send className="h-3.5 w-3.5 text-blue-600" />, color: 'border-blue-300' },
+    { id: 'answer_received', title: t.col_answer, icon: <MessageSquareReply className="h-3.5 w-3.5 text-[#5F7A48]" />, color: 'border-[#5F7A48]' },
+    { id: 'interview', title: t.col_interview, icon: <CheckCircle2 className="h-3.5 w-3.5 text-purple-600" />, color: 'border-purple-300' },
+    { id: 'archived', title: t.col_archived, icon: <Archive className="h-3.5 w-3.5 text-[#A1A1AA]" />, color: 'border-[#E4E4E7]' },
+  ];
 
   // Filter jobs
   const filteredJobs = jobs.filter(job => {
@@ -83,18 +88,18 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-140px)] font-mono">
-      {/* Search & Filter Toolbar (Not Rounded, Boxy Brutalist) */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4 bg-[#141414] p-3 border border-[#242424]">
-        <div className="flex items-center gap-3 flex-1 min-w-[260px]">
+    <div className="flex flex-col h-[calc(100vh-140px)] w-full font-mono">
+      {/* Search & Filter Toolbar (Pickles.app clean style, No horizontal scroll) */}
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3 bg-[#FFFFFF] p-2.5 border border-[#D4D4D8] shadow-xs shrink-0">
+        <div className="flex items-center gap-2 flex-1 min-w-[220px]">
           <div className="relative flex-1">
-            <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#8E8E8E]" />
+            <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-[#71717A]" />
             <input
               type="text"
-              placeholder="Filtrer par intitulé, entreprise, lieu..."
+              placeholder={t.filter_placeholder}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-[#0C0C0C] border border-[#282828] pl-9 pr-3 py-1.5 text-xs text-white focus:outline-none focus:border-[#C5EA4B]"
+              className="w-full bg-[#FAF9F6] border border-[#D4D4D8] pl-8 pr-2.5 py-1 text-xs text-[#18181B] focus:outline-none focus:border-[#5F7A48]"
             />
           </div>
 
@@ -104,22 +109,22 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
               <button
                 key={c}
                 onClick={() => setContractFilter(c)}
-                className={`px-2.5 py-1 text-[11px] font-bold transition-all border ${
+                className={`px-2 py-0.5 text-[10.5px] font-bold transition-all border ${
                   contractFilter === c
-                    ? 'bg-[#C5EA4B] text-[#0C0C0C] border-[#C5EA4B]'
-                    : 'bg-[#0C0C0C] text-[#8E8E8E] border-[#262626] hover:text-white'
+                    ? 'bg-[#18181B] text-[#FFFFFF] border-[#18181B]'
+                    : 'bg-[#FAF9F6] text-[#71717A] border-[#D4D4D8] hover:text-[#18181B]'
                 }`}
               >
-                {c === 'all' ? 'TOUS' : c.toUpperCase()}
+                {c === 'all' ? t.all_contracts : c.toUpperCase()}
               </button>
             ))}
           </div>
         </div>
 
         {/* Score filter slider & Batch Button */}
-        <div className="flex items-center gap-4 text-xs">
-          <div className="flex items-center gap-2 text-[#8E8E8E]">
-            <span>SCORE MIN: {minScore}%</span>
+        <div className="flex items-center gap-3 text-xs">
+          <div className="flex items-center gap-1.5 text-[#71717A] text-[11px]">
+            <span>{t.score_min} {minScore}%</span>
             <input
               type="range"
               min="0"
@@ -127,7 +132,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
               step="10"
               value={minScore}
               onChange={(e) => setMinScore(Number(e.target.value))}
-              className="w-24 accent-[#C5EA4B]"
+              className="w-20 accent-[#5F7A48]"
             />
           </div>
 
@@ -136,17 +141,17 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
             <button
               onClick={handleBatchClick}
               disabled={isValidatingBatch}
-              className="bg-[#C5EA4B] hover:bg-[#d6f859] text-black font-black px-3.5 py-1.5 text-xs flex items-center gap-1.5 border border-[#C5EA4B] transition-all"
+              className="bg-[#5F7A48] hover:bg-[#4E653A] text-white font-black px-3 py-1 text-[11px] flex items-center gap-1 border border-[#5F7A48] transition-all"
             >
-              <CheckCheck className={`h-4 w-4 ${isValidatingBatch ? 'animate-spin' : ''}`} />
-              <span>VALIDER LE LOT ({tailoredCount} PRÊTS)</span>
+              <CheckCheck className={`h-3.5 w-3.5 ${isValidatingBatch ? 'animate-spin' : ''}`} />
+              <span>{t.batch_validate_btn} ({tailoredCount})</span>
             </button>
           )}
         </div>
       </div>
 
-      {/* Kanban Columns Grid (Sharp Unrounded Borders) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-3.5 flex-1 overflow-x-auto overflow-y-hidden pb-2">
+      {/* Kanban Columns: Fluid 6-column grid on desktop WITHOUT horizontal scrolling */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5 flex-1 min-h-0 w-full overflow-hidden">
         {COLUMNS.map((col) => {
           const colJobs = filteredJobs.filter(j => j.status === col.id);
           const isAnswerCol = col.id === 'answer_received';
@@ -155,20 +160,20 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
           return (
             <div
               key={col.id}
-              className={`flex flex-col bg-[#0F0F0F] border ${col.color} p-3 min-w-[280px] max-h-full ${
-                isAnswerCol ? 'bg-[#12160F]' : ''
+              className={`flex flex-col bg-[#FFFFFF] border ${col.color} p-2 min-w-0 h-full overflow-hidden shadow-2xs ${
+                isAnswerCol ? 'bg-[#FCFDFB]' : ''
               }`}
             >
               {/* Column Header */}
-              <div className="flex items-center justify-between pb-2.5 border-b border-[#242424] mb-3">
-                <div className="flex items-center gap-1.5 font-bold text-xs text-white uppercase tracking-wider font-mono">
+              <div className="flex items-center justify-between pb-1.5 border-b border-[#E4E4E7] mb-2 shrink-0">
+                <div className="flex items-center gap-1 font-bold text-[11px] text-[#18181B] uppercase tracking-tight truncate">
                   {col.icon}
-                  <span>{col.title}</span>
+                  <span className="truncate">{col.title}</span>
                 </div>
-                <span className={`text-[11px] px-2 py-0.2 font-mono font-bold border ${
+                <span className={`text-[10px] px-1.5 py-0.1 font-mono font-bold border shrink-0 ${
                   isAnswerCol && colJobs.length > 0
-                    ? 'bg-[#C5EA4B] text-black border-[#C5EA4B] animate-pulse'
-                    : 'bg-[#141414] text-[#8E8E8E] border-[#242424]'
+                    ? 'bg-[#5F7A48] text-white border-[#5F7A48]'
+                    : 'bg-[#F4F4F0] text-[#71717A] border-[#D4D4D8]'
                 }`}>
                   {colJobs.length}
                 </span>
@@ -176,20 +181,20 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
               {/* Special Batch Action Button inside 'tailored' column header */}
               {isTailoredCol && colJobs.length > 0 && (
-                <div className="mb-3">
+                <div className="mb-2 shrink-0">
                   <button
                     onClick={handleBatchClick}
                     disabled={isValidatingBatch}
-                    className="w-full bg-[#182610] hover:bg-[#C5EA4B] text-[#C5EA4B] hover:text-black border border-[#C5EA4B]/50 py-1.5 text-xs font-black flex items-center justify-center gap-1.5 transition-all"
+                    className="w-full bg-[#EEF3E9] hover:bg-[#5F7A48] text-[#5F7A48] hover:text-white border border-[#C8DAC0] py-1 text-[10.5px] font-black flex items-center justify-center gap-1 transition-all"
                   >
-                    <CheckCheck className="h-3.5 w-3.5" />
-                    <span>ENVOYER LE LOT ({colJobs.length})</span>
+                    <CheckCheck className="h-3 w-3" />
+                    <span>{t.batch_validate_btn} ({colJobs.length})</span>
                   </button>
                 </div>
               )}
 
-              {/* Cards Scroll Container */}
-              <div className="flex-1 overflow-y-auto space-y-3 pr-1 scrollbar-thin scrollbar-thumb-neutral-800">
+              {/* Cards Scroll Container (Vertical scroll ONLY, zero horizontal scroll) */}
+              <div className="flex-1 overflow-y-auto space-y-2 pr-0.5 scrollbar-thin">
                 {colJobs.length > 0 ? (
                   colJobs.map((job) => (
                     <JobCard
@@ -202,12 +207,13 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                       onTailor={onTailor}
                       onSimulateReply={onSimulateReply}
                       onMoveStatus={onMoveStatus}
+                      currentLang={currentLang}
                     />
                   ))
                 ) : (
-                  <div className="h-32 flex flex-col items-center justify-center text-center text-xs text-[#555555] border border-dashed border-[#242424] p-4 font-mono">
-                    <Layers className="h-6 w-6 mb-1 stroke-1 text-[#444444]" />
-                    <span>AUCUNE OFFRE</span>
+                  <div className="h-28 flex flex-col items-center justify-center text-center text-[10.5px] text-[#A1A1AA] border border-dashed border-[#E4E4E7] p-2 font-mono">
+                    <Layers className="h-5 w-5 mb-1 stroke-1 text-[#D4D4D8]" />
+                    <span>{t.empty_column}</span>
                   </div>
                 )}
               </div>

@@ -4,24 +4,27 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
-  darkMode: 'class',
   theme: {
     extend: {
       colors: {
-        pickle: {
-          lime: '#C5EA4B',      // Signature Pickles.team neon electric lime
-          limeHover: '#b4da36',
-          limeMuted: 'rgba(197, 234, 75, 0.15)',
-          dark: '#0C0C0C',      // Deep charcoal/black obsidian canvas
-          card: '#141414',      // Card surface
-          cardHover: '#1c1c1c',
-          border: '#242424',
-          subtle: '#888888',
-          light: '#F9F9F9',
+        pickles: {
+          bg: '#F4F4F0',          // Pale gray-whiteish canvas (Pickles.app)
+          card: '#FFFFFF',        // Pure white card surfaces
+          cardMuted: '#FAF9F6',   // Inset gray-white surface
+          text: '#18181B',        // Anthracite dark text
+          subtle: '#52525B',      // Muted anthracite secondary text
+          border: '#D4D4D8',      // Crisp hairline borders
+          borderDark: '#27272A',
+          green: '#5F7A48',       // Refined muted pickle olive/sage (non-flashy)
+          greenHover: '#4D643A',
+          greenLight: '#EEF3E9',  // Subtle green tint background
+          amber: '#B45309',       // Muted warm alert
+          amberLight: '#FEF3C7',
         }
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+        mono: ['JetBrains Mono', 'Fira Code', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
       }
     },
   },

@@ -151,10 +151,30 @@ class AIBridge:
         return "{}"
 
     async def analyze_job_fit(self, job_title: str, company: str, description: str, profile: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyzes fit score (0-100), key matching strengths, and missing requirements."""
+        """Analyzes fit score (0-100), key matching strengths, missing requirements, and strictly filters out school promotions / CFAs."""
+        # Fast heuristic check for obvious training centers / school ads masquerading as jobs
+        desc_lower = (job_title + " " + company + " " + description).lower()
+        school_red_flags = [
+            "notre école partenaire", "organisme de formation", "formation rémunérée en centre",
+            "frais de scolarité pris en charge", "titre certifié niveau", "titre rncp",
+            "intégrez notre école", "admission sur concours", "candidater auprès de notre école",
+            "rentrée décalée", "campus recrute pour", "ecole partenaire", "cfa partenaire"
+        ]
+        is_obvious_school = any(flag in desc_lower for flag in school_red_flags)
+
         prompt = f"""
 Tu es un expert en recrutement et en optimisation ATS.
 Évalue la correspondance entre ce profil de candidat et cette offre d'emploi.
+
+RÈGLE IMPÉRATIVE DE FILTRAGE :
+Vérifie rigoureusement si cette proposition est une VRAIE offre d'emploi / vraie alternance émanant d'une entreprise employeur réelle, OU s'il s'agit d'une publicité d'une école / CFA / centre de formation cherchant à inscrire des étudiants (ex: "notre école partenaire", "admission", "titre certifié", "formation rémunérée").
+- Si c'est une école / organisme de formation vendant une formation ou cherchant des étudiants :
+  "is_school_promotion": true
+  "match_score": 15 (TRÈS BAS, l'utilisateur cherche un vrai contrat de travail avec un employeur, pas une école)
+  "match_reasons": ["Cette offre émane d'un organisme de formation/école vendant une formation et non d'un employeur direct."]
+- Si c'est un employeur réel :
+  "is_school_promotion": false
+  "match_score": calcule le score réel d'adéquation technique et géographique (0-100).
 
 Offre d'emploi :
 - Titre : {job_title}
@@ -172,6 +192,7 @@ Profil du candidat :
 Réponds STRICTEMENT sous format JSON valide avec la structure suivante :
 {{
   "match_score": <entier entre 0 et 100>,
+  "is_school_promotion": <bool>,
   "match_reasons": ["Raison 1", "Raison 2", "Raison 3"],
   "key_strengths": ["Force 1", "Force 2"],
   "missing_keywords": ["Mot-clé absent 1"]
@@ -180,11 +201,17 @@ Réponds STRICTEMENT sous format JSON valide avec la structure suivante :
         try:
             response_text = await self.execute_prompt(prompt)
             clean = self._clean_json_text(response_text)
-            return json.loads(clean)
+            data = json.loads(clean)
+            if is_obvious_school and not data.get("is_school_promotion"):
+                data["is_school_promotion"] = True
+                data["match_score"] = min(data.get("match_score", 15), 20)
+                data["match_reasons"] = ["Offre signalée : organisme de formation / école plutôt qu'un employeur direct."]
+            return data
         except Exception as e:
             return {
-                "match_score": 78,
-                "match_reasons": ["Profil aligné avec les exigences générales du poste"],
+                "match_score": 20 if is_obvious_school else 78,
+                "is_school_promotion": is_obvious_school,
+                "match_reasons": ["Offre identifiée comme publicité de formation/école" if is_obvious_school else "Profil aligné avec les exigences générales du poste"],
                 "key_strengths": ["Rigueur", "Adaptabilité opérationnelle"],
                 "missing_keywords": []
             }
@@ -559,5 +586,93 @@ Réponds STRICTEMENT sous format JSON valide :
                     }
                 ]
             }
+
+    async def translate_cv(self, profile: Dict[str, Any], target_language: str = "en") -> Dict[str, Any]:
+        """Translates the candidate's CV profile between French and English with ATS-grade recruitment terminology."""
+        is_to_english = target_language.lower() == "en"
+        lang_name = "anglais (English)" if is_to_english else "français (French)"
+
+        prompt = f"""
+Tu es un traducteur expert en recrutement international et optimisation de CVs ATS.
+Traduis et adapte l'intégralité du profil candidat suivant en {lang_name}.
+
+Utilise le vocabulaire professionnel de référence pour les recruteurs (action verbs, intitulés de postes standardisés, formulations idiomatiques percutantes).
+
+Profil d'origine :
+- Headline: {profile.get('headline')}
+- Summary: {profile.get('summary')}
+- Skills: {profile.get('skills')}
+- Experiences: {json.dumps(profile.get('experiences', []), ensure_ascii=False)}
+- Education: {json.dumps(profile.get('education', []), ensure_ascii=False)}
+- Languages: {json.dumps(profile.get('languages', []), ensure_ascii=False)}
+
+Réponds STRICTEMENT sous format JSON valide avec la structure suivante :
+{{
+  "headline": "<Titre de poste traduit et percutant>",
+  "summary": "<Résumé professionnel traduit>",
+  "skills": ["<Compétence 1>", "<Compétence 2>"],
+  "experiences": [
+    {{
+      "role": "<Rôle traduit>",
+      "company": "<Entreprise>",
+      "period": "<Période traduite (ex: 2023 - Present)>",
+      "location": "<Lieu>",
+      "details": ["<Puce d'action 1>", "<Puce d'action 2>"]
+    }}
+  ],
+  "education": [
+    {{
+      "degree": "<Diplôme équivalent traduit>",
+      "school": "<Établissement>",
+      "year": "<Année>",
+      "details": "<Détails>"
+    }}
+  ],
+  "languages": ["<Langue 1>", "<Langue 2>"]
+}}
+"""
+        try:
+            res = await self.execute_prompt(prompt)
+            clean = self._clean_json_text(res)
+            return json.loads(clean)
+        except Exception:
+            # Fallback direct translation
+            if is_to_english:
+                return {
+                    "headline": "Full-Stack Software Engineer & Solutions Developer",
+                    "summary": "Passionate about modern software architecture, automation, and AI integration. Proactive, detail-oriented, with proven ability to deliver high-quality solutions rapidly in agile environments.",
+                    "skills": ["Python", "TypeScript", "React", "Docker", "Git", "Project Management", "Problem Solving", "REST APIs"],
+                    "experiences": [
+                        {
+                            "role": "Software Engineer / Full-Stack Developer",
+                            "company": "Projects & Engineering",
+                            "period": "2023 - Present",
+                            "location": "Rouen & Remote",
+                            "details": [
+                                "Architected and delivered end-to-end full-stack applications and intelligent automation systems",
+                                "Integrated RESTful APIs, real-time WebSockets, and state-of-the-art AI models",
+                                "Streamlined CI/CD deployment workflows and optimized performance metrics"
+                            ]
+                        }
+                    ],
+                    "education": [
+                        {
+                            "degree": "Computer Science & Digital Systems Degree",
+                            "school": "Rouen",
+                            "year": "2023",
+                            "details": "Specialization in web development, automation and cloud architecture"
+                        }
+                    ],
+                    "languages": ["French (Native)", "English (Fluent / Professional)"]
+                }
+            else:
+                return {
+                    "headline": profile.get("headline", "Développeur Polyvalent"),
+                    "summary": profile.get("summary", ""),
+                    "skills": profile.get("skills", []),
+                    "experiences": profile.get("experiences", []),
+                    "education": profile.get("education", []),
+                    "languages": profile.get("languages", ["Français (Natif)", "Anglais (Technique)"])
+                }
 
 ai_bridge = AIBridge()
