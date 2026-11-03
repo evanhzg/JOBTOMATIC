@@ -43,8 +43,8 @@ export default function Board({ status, openJob, go }: { status: Status | null; 
 
   return (
     <div>
-      <div className="mb-5 grid grid-cols-2 border-[1.5px] border-ink md:grid-cols-5">
-        <Kpi n={by.new?.length ?? 0} label="à trier" sub={unscored ? `${unscored} en cours d'évaluation` : "toutes évaluées"} />
+      <div className="mb-5 grid grid-cols-2 gap-[1.5px] border-[1.5px] border-ink bg-ink md:grid-cols-5">
+        <Kpi n={by.new?.length ?? 0} label="à trier" sub={unscored ? `${unscored} pas encore notée(s)` : "toutes notées"} />
         <Kpi n={by.ready?.length ?? 0} label="CV prêts" sub={readyEmail ? `${readyEmail} envoyables par email` : "aucun envoi en attente"} />
         <Kpi n={status?.applications_today ?? 0} label="envoyées aujourd'hui" sub={`limite ${status?.daily_limit ?? "—"}`} />
         <Kpi n={status?.followups_manual ?? 0} label="relances à faire" sub={`${status?.followups_scheduled ?? 0} programmées`} />
@@ -91,7 +91,7 @@ export default function Board({ status, openJob, go }: { status: Status | null; 
 
 function Kpi({ n, label, sub }: { n: number; label: string; sub: string }) {
   return (
-    <div className="border-ink px-4 py-3 [&:not(:first-child)]:border-l-[1.5px] max-md:[&:nth-child(n+3)]:border-t-[1.5px] max-md:[&:nth-child(3)]:border-l-0">
+    <div className="bg-paper px-4 py-3 max-md:last:col-span-2">
       <div className="font-display text-[40px] font-extrabold leading-none">{n}</div>
       <div className="label mt-1">{label}</div>
       <div className="font-mono text-[10.5px] uppercase text-muted">{sub}</div>

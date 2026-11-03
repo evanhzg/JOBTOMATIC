@@ -38,7 +38,7 @@ export default function Searches() {
       <div className="grid gap-4 lg:grid-cols-2">
         {(searches || []).map((s) => (
           <article key={s.id} className={`border-[1.5px] border-ink ${s.active ? "" : "opacity-60"}`}>
-            <header className="flex items-start justify-between gap-3 border-b-[1.5px] border-ink p-3">
+            <header className="flex flex-wrap items-start justify-between gap-3 border-b-[1.5px] border-ink p-3">
               <div className="min-w-0">
                 <h3 className="display truncate text-[26px]">{s.label || s.query}</h3>
                 <div className="kicker mt-1 text-[11px]">
@@ -50,7 +50,7 @@ export default function Searches() {
                   {s.exclude_keywords.map((k) => <span key={k} className="chip-soft line-through">{k}</span>)}
                 </div>
               </div>
-              <div className="flex shrink-0 flex-col items-end gap-2">
+              <div className="flex shrink-0 flex-col items-end gap-2 max-sm:w-full max-sm:flex-row max-sm:justify-between">
                 <Toggle on={!!s.active} onChange={(v) => run("t", async () => { await api(`/searches/${s.id}`, { method: "PUT", body: { ...s, active: v } }); reload(); })} label="Auto" />
                 <div className="flex gap-1">
                   <button className="btn btn-sm" disabled={s.running} onClick={() => run("r", () => api(`/searches/${s.id}/run`, { method: "POST" }), "Recherche lancée")}><Play size={12} />{s.running ? "En cours…" : "Lancer"}</button>
@@ -70,7 +70,7 @@ export default function Searches() {
                 <div className="space-y-1">
                   {s.last_report.map((r, i) => (
                     <div key={i} className="leader text-[11.5px]" title={r.error || r.skipped}>
-                      <span>{r.label} · {r.location}</span><span className="dots" />
+                      <span className="min-w-0 truncate">{r.label} · {r.location}</span><span className="dots min-w-[12px]" />
                       <span className={`font-bold ${r.ok ? "" : r.skipped ? "text-muted" : "text-alert"}`}>
                         {r.ok ? `${r.count} offre(s)` : r.skipped ? r.skipped : `erreur : ${r.error.slice(0, 60)}`}
                       </span>

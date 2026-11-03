@@ -45,9 +45,9 @@ export default function Offers({ openJob }: { openJob: (id: number) => void }) {
         <Select label="Contrat" value={contract} onChange={setContract} options={[["", "Tous"], ...CONTRACTS.map((c) => [c, c] as [string, string])]} />
         <Select label="Source" value={source} onChange={setSource} options={[["", "Toutes"], ...sources.map((s) => [s, s] as [string, string])]} />
         <Select label="Trier par" value={sort} onChange={(v) => setSort(v as Sort)} options={[["score", "Adéquation"], ["date", "Plus récentes"], ["company", "Entreprise"]]} />
-        <div className="flex items-center gap-3 md:col-span-5">
+        <div className="flex flex-wrap items-center gap-3 md:col-span-5">
           <span className="label">Score minimum</span>
-          <input type="range" min={0} max={95} step={5} value={minScore} onChange={(e) => setMinScore(+e.target.value)} className="w-48 accent-[var(--ink)]" />
+          <input type="range" min={0} max={95} step={5} value={minScore} onChange={(e) => setMinScore(+e.target.value)} className="w-40 accent-[var(--ink)]" />
           <span className="font-mono text-[12px] font-bold">{minScore}</span>
           <label className="ml-auto flex items-center gap-2 font-mono text-[11px] uppercase">
             <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Inclure les archivées

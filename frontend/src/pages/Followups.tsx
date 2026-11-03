@@ -77,7 +77,7 @@ function Card({ f, reload, openJob }: { f: Followup; reload: () => void; openJob
       {f.status === "failed" && <div className="mt-2 text-[12px] text-alert">Échec : {f.error}</div>}
       {!body ? (
         <div className="mt-2">
-          <button className="btn btn-sm" disabled={busy === "draft"} onClick={() => run("draft", async () => { await api(`/followups/${f.id}/send`, { method: "POST" }); reload(); }, "Brouillon rédigé")}>Rédiger avec l'IA</button>
+          <button className="btn btn-sm" disabled={busy === "draft"} onClick={() => run("draft", async () => { await api(`/followups/${f.id}/draft`, { method: "POST" }); reload(); }, "Brouillon rédigé")}>Rédiger avec l'IA</button>
         </div>
       ) : (
         <>

@@ -142,6 +142,19 @@ async def process_due_followups() -> int:
     return handled
 
 
+async def draft_only(followup_id: int) -> Dict[str, Any]:
+    """Write the relance text without sending it."""
+    f = await db.fetch_one("followups", "SELECT * FROM followups WHERE id = ?", (followup_id,))
+    if not f:
+        raise ValueError("Relance introuvable")
+    job = await db.fetch_one("jobs", "SELECT * FROM jobs WHERE id = ?", (f["job_id"],))
+    days = (datetime.now() - datetime.fromisoformat(job["applied_at"])).days if job.get("applied_at") else 7
+    draft = await skills.draft_followup(job, await db.get_profile(), f["seq"], days)
+    await db.update("followups", f["id"], {"subject": draft["subject"], "body": draft["body"]}, touch=False)
+    publish("followups", {"job_id": job["id"]})
+    return draft
+
+
 async def send_followup(followup_id: int, automatic: bool = False, subject: Optional[str] = None,
                         body: Optional[str] = None) -> Dict[str, Any]:
     f = await db.fetch_one("followups", "SELECT * FROM followups WHERE id = ?", (followup_id,))

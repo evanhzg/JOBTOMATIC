@@ -191,6 +191,8 @@ _AD_SIGNALS: List[Tuple[re.Pattern, int, str]] = [
     (re.compile(r"\brentree (de |en )?(septembre|octobre|janvier|fevrier|mars|20\d\d)|prochaine rentree"), 1, "parle de rentrée"),
     (re.compile(r"\bnos campus\b|\bnotre campus\b|places limitees|session de recrutement|reunion d'information|journee portes ouvertes"), 2, "vocabulaire d'école"),
     (re.compile(r"(bachelor|mba|mastere|bts|licence) .{0,30}(en alternance )?(avec|chez) nous\b|\bnotre (bachelor|mba|mastere|bts|programme)\b"), 2, "promeut son programme"),
+    (re.compile(r"\b(pour|par) (le|les|notre|nos|un|des) (cfa|ecoles?|centres? de formation|organismes? de formation)\b|\brecrut\w* pour (le|les|notre|nos) (cfa|ecoles?)\b"), 3, "recrute pour le compte d'un CFA/école"),
+    (re.compile(r"\b[a-z-]*(apprentissage|alternance|formation)s?\.(com|fr)\b"), 2, "plateforme d'apprentissage"),
 ]
 
 

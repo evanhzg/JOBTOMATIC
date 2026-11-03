@@ -499,6 +499,16 @@ async def send_followup_now(fid: int):
         bad(e, 502)
 
 
+@app.post("/api/followups/{fid}/draft")
+async def draft_followup(fid: int):
+    try:
+        return await applications.draft_only(fid)
+    except pool.AIUnavailable as e:
+        bad(Exception(f"IA indisponible jusqu'à {e.resume_at:%H:%M}" if e.resume_at else str(e)), 503)
+    except ValueError as e:
+        bad(e)
+
+
 @app.post("/api/followups/{fid}/done")
 async def followup_done(fid: int):
     await db.update("followups", fid, {"status": "sent", "sent_at": db.now_iso()}, touch=False)

@@ -100,6 +100,7 @@ function Optimizer({ data, onTask, taskState, reload }: { data: CvState; onTask:
 
   const auditing = taskState && (taskState.status === "queued" || taskState.status === "running") && taskState.kind === "audit";
   const overflow: string[] = preview?.result?.overflow || [];
+  const short: string[] = preview?.result?.short || [];
   const measured = audit?.measured || data.master!.measured;
   const after = preview?.measured;
 
@@ -159,7 +160,7 @@ function Optimizer({ data, onTask, taskState, reload }: { data: CvState; onTask:
               </div>
               <div className="mt-2 space-y-2">
                 {audit.suggestions.map((s) => (
-                  <SuggestionRow key={s.id} s={s} value={accepted[s.id]} overflow={overflow.includes(s.id)} editing={editing === s.id}
+                  <SuggestionRow key={s.id} s={s} value={accepted[s.id]} overflow={overflow.includes(s.id)} short={short.includes(s.id)} editing={editing === s.id}
                     onEdit={() => setEditing(editing === s.id ? null : s.id)}
                     onChange={(v) => setAccepted((a) => {
                       const n = { ...a };
@@ -182,7 +183,10 @@ function Optimizer({ data, onTask, taskState, reload }: { data: CvState; onTask:
         <aside className="p-4">
           <div className="mb-2 flex items-center justify-between">
             <div className="label flex items-center gap-1.5"><Eye size={12} />{preview ? "Aperçu avec vos choix" : "Version actuelle"}</div>
-            {overflow.length > 0 && <span className="chip border-alert text-alert">{overflow.length} trop long(s)</span>}
+            <span className="flex gap-1">
+              {overflow.length > 0 && <span className="chip border-alert text-alert">{overflow.length} trop long(s)</span>}
+              {short.length > 0 && <span className="chip-soft">{short.length} laisse(nt) un blanc</span>}
+            </span>
           </div>
           <div className="border-[1.5px] border-ink bg-cream">
             {Array.from({ length: preview?.pages || data.master!.pages }).map((_, n) => (
@@ -216,8 +220,8 @@ function Measure({ k, v, after, unit = "" }: { k: string; v: any; after?: any; u
   );
 }
 
-function SuggestionRow({ s, value, onChange, overflow, editing, onEdit }: {
-  s: Suggestion; value?: string; onChange: (v: string | null) => void; overflow: boolean; editing: boolean; onEdit: () => void;
+function SuggestionRow({ s, value, onChange, overflow, short, editing, onEdit }: {
+  s: Suggestion; value?: string; onChange: (v: string | null) => void; overflow: boolean; short: boolean; editing: boolean; onEdit: () => void;
 }) {
   const on = value !== undefined;
   const text = value ?? s.text;
@@ -238,6 +242,7 @@ function SuggestionRow({ s, value, onChange, overflow, editing, onEdit }: {
             <span className="chip-soft">{AXES[s.axis] || s.axis}</span>
             <span className={s.gain === "fort" ? "chip-navy" : "chip-soft"}>gain {s.gain}</span>
             <span className={len > s.max_chars || overflow ? "text-alert" : "text-muted"}>{len}/{s.max_chars} car.{overflow ? " — ne rentre pas" : ""}</span>
+            {short && <span className="text-[#9a6b00]">plus court que l'original : laisse un blanc</span>}
             <span className="text-navy normal-case">{s.why}</span>
           </div>
         </div>

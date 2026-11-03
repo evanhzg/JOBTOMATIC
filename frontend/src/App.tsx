@@ -58,12 +58,12 @@ function Shell() {
     <div className="mx-auto max-w-[1500px] px-3 pb-10 pt-3 sm:px-6 sm:pt-6">
       <div className="frame bg-paper/60">
         <Masthead status={status} reload={reload} go={go} />
-        <nav className="grid grid-cols-4 border-b-[1.5px] border-ink sm:grid-cols-7">
+        <nav className="grid grid-cols-4 gap-[1.5px] border-b-[1.5px] border-ink bg-ink sm:grid-cols-7">
           {TABS.map((t, i) => (
             <button key={t.id} onClick={() => go(t.id)}
-              className={`border-ink py-3 font-mono text-[12.5px] font-bold uppercase tracking-[0.06em] transition-colors
-                ${i ? "border-l-[1.5px]" : ""} ${i >= 4 ? "max-sm:border-t-[1.5px]" : ""} ${i === 4 ? "max-sm:border-l-0" : ""}
-                ${tab === t.id ? "bg-ink text-cream" : "hover:bg-wash"}`}>
+              className={`px-1 py-3 font-mono text-[11px] font-bold uppercase tracking-[0.04em] transition-colors sm:text-[12.5px] sm:tracking-[0.06em]
+                ${i === TABS.length - 1 ? "max-sm:col-span-2" : ""}
+                ${tab === t.id ? "bg-ink text-cream" : "bg-paper hover:bg-wash"}`}>
               {t.label}
               {t.id === "relances" && status && status.followups_manual > 0 && (
                 <span className="ml-1.5 bg-navy px-1 text-cream">{status.followups_manual}</span>

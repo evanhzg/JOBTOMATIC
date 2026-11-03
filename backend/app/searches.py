@@ -73,9 +73,10 @@ async def run_search(search_id: int, manual: bool = False) -> Dict[str, Any]:
             "new_last_run": len(new_ids),
         }, touch=False)
         ok = sum(1 for r in reports if r.get("ok"))
+        failed = sum(1 for r in reports if not r.get("ok") and not r.get("skipped"))
         await db.log_activity("SUCCESS" if new_ids else "INFO",
-                              f"Recherche « {s['label'] or s['query']} » : {len(new_ids)} nouvelle(s) offre(s), "
-                              f"{ok}/{len(reports)} sources OK.")
+                              f"Recherche « {s['label'] or s['query']} » : {len(new_ids)} nouvelle(s) offre(s) — "
+                              f"{ok} source(s) OK" + (f", {failed} en erreur" if failed else "") + ".")
         publish("jobs_changed", {"new": len(new_ids), "search_id": search_id})
         return {"status": "ok", "new": len(new_ids), "report": reports}
     finally:
