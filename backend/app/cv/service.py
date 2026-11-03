@@ -187,7 +187,7 @@ async def tailor_job(job_id: int) -> Dict[str, Any]:
     out = CVS_DIR / f"CV_{_file_slug(profile.get('full_name') or 'candidat')}_{job_id}.pdf"
     result = _render_with(base_pdf, edits, out, units, email)
     overflow = [{"id": uid, "text": edits[uid], "max_chars": by_id[uid].max_chars, "min_chars": by_id[uid].min_chars}
-                for uid in result.overflow if uid in edits]
+                for uid in result.overflow + result.short if uid in edits]
     if overflow or too_long:
         retry = {i["id"]: i for i in overflow + too_long}
         try:
@@ -196,7 +196,12 @@ async def tailor_job(job_id: int) -> Dict[str, Any]:
             result = _render_with(base_pdf, edits, out, units, email)
         except Exception:
             pass
-    dropped = [uid for uid in result.overflow if uid in edits]
+    # Still too long or leaving a hole: keep the original text, the design comes first.
+    dropped = [uid for uid in result.overflow + result.short if uid in edits]
+    if any(uid in result.short for uid in dropped):
+        for uid in dropped:
+            edits.pop(uid, None)
+        result = _render_with(base_pdf, edits, out, units, email)
     for uid in dropped:
         edits.pop(uid, None)
 

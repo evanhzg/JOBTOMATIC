@@ -17,7 +17,6 @@ log = logging.getLogger(__name__)
 SCRAPER_MODULES = {
     "france_travail": "FranceTravailScraper",
     "la_bonne_alternance": "LaBonneAlternanceScraper",
-    "apec": "ApecScraper",
     "adzuna": "AdzunaScraper",
     "jooble": "JoobleScraper",
 }

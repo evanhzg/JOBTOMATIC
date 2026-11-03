@@ -591,6 +591,7 @@ class ApplyResult:
     applied: List[str] = field(default_factory=list)
     shrunk: List[str] = field(default_factory=list)
     overflow: List[str] = field(default_factory=list)
+    short: List[str] = field(default_factory=list)      # fewer lines than the original block (leaves a gap)
     skipped_locked: List[str] = field(default_factory=list)
     unknown: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
@@ -668,6 +669,8 @@ def apply_edits(
         if chosen is None:
             result.overflow.append(uid)
             continue
+        if new_text and len(chosen[1]) < len(u.lines) and u.kind in ("bullet", "body"):
+            result.short.append(uid)
         plans.append((u, chosen[0], chosen[1], plain))
 
     # 1) remove original glyphs of every unit we rewrite (per page)
