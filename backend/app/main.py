@@ -25,6 +25,9 @@ from .events import publish, subscribe, unsubscribe
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await db.init_db()
+    # First launch with a CV carried over from the old app: read the profile from it.
+    if not (await db.get_profile()).get("full_name") and await db.get_master_cv():
+        await tasks.enqueue("profile_from_cv", None, {}, priority=5)
     await scheduler.runner.start()
     yield
     await scheduler.runner.stop()
