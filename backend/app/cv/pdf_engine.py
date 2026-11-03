@@ -87,6 +87,8 @@ class TextUnit:
     right_limit: float
     bottom_limit: float
     max_chars: int
+    min_chars: int = 0
+    chars_per_line: int = 0
     spaced: bool = False
     lines: List[LineGeom] = field(default_factory=list)
 
@@ -451,10 +453,17 @@ def extract_units(pdf_path: str | Path, resolver: Optional[FontResolver] = None)
                      and o.bbox[0] < u.right_limit and o.bbox[2] > x0]
             below += [r.y0 for r in obstacles if r.y0 >= y1 - 1 and r.y0 > y0 + 2
                       and r.x0 < u.right_limit and r.x1 > x0]
-            u.bottom_limit = (min(below) - 1.5) if below else page.rect.height - 18
+            next_top = min(below) if below else page.rect.height - 18
+            gap0 = next_top - y1
+            # keep most of the original white space before the next element
+            keep = max(1.5, min(gap0, max(u.line_gap * 0.9, gap0 * 0.6)))
+            u.bottom_limit = next_top - keep
             free_lines = max(0, int((u.bottom_limit - y1) // max(u.line_gap, 1)))
             chars_per_line = max(10, len(u.text) / max(1, len(u.lines)) * (u.right_limit - x0) / max(1, x1 - x0))
+            u.chars_per_line = int(chars_per_line)
             u.max_chars = int(min(len(u.text) * 1.6 + 20, chars_per_line * (len(u.lines) + free_lines)))
+            # multi-line blocks should stay as tall, or a hole appears in the layout
+            u.min_chars = int(chars_per_line * (len(u.lines) - 1) + 4) if len(u.lines) > 1 else 0
         built.sort(key=lambda t: (round(t.bbox[0] / 120), t.bbox[1]))
         units.extend(built)
 
@@ -464,18 +473,37 @@ def extract_units(pdf_path: str | Path, resolver: Optional[FontResolver] = None)
 
 # --------------------------------------------------------------------------- layout
 
-def _tokens(rich: str) -> List[Tuple[str, bool]]:
-    """'**Bold** rest' -> [('Bold', True), ('rest', False)] split into words."""
-    out: List[Tuple[str, bool]] = []
+def _tokens(rich: str) -> List[List[Tuple[str, bool]]]:
+    """'**Disponible 7j/7**, week-ends' -> [[('Disponible',B)], [('7j/7',B), (',',R)], [('week-ends',R)]]
+    Each word is a list of styled pieces, so punctuation after bold text stays attached."""
+    words: List[List[Tuple[str, bool]]] = []
+    glue = False
     for i, part in enumerate(re.split(r"\*\*", rich)):
         bold = i % 2 == 1
-        for w in re.findall(r"\S+", part):
-            out.append((w, bold))
-    return out
+        if not part:
+            continue
+        pieces = re.split(r"(\s+)", part)
+        for j, piece in enumerate(pieces):
+            if not piece:
+                continue
+            if piece.isspace():
+                glue = False
+                continue
+            if words and glue and j == 0:
+                words[-1].append((piece, bold))
+            else:
+                words.append([(piece, bold)])
+            glue = True
+        glue = not part[-1].isspace()
+    return words
 
 
 def _word_width(word: str, font: pymupdf.Font, size: float, ls: float) -> float:
     return font.text_length(word, fontsize=size) + ls * len(word)
+
+
+def _pieces_width(pieces, reg, bold, size, ls) -> float:
+    return sum(_word_width(t, bold if b else reg, size, ls) for t, b in pieces)
 
 
 def layout_unit(unit: TextUnit, rich: str, resolver: FontResolver, scale: float = 1.0):
@@ -513,18 +541,18 @@ def layout_unit(unit: TextUnit, rich: str, resolver: FontResolver, scale: float 
         x = first_x if i == 0 else cont_x
         return unit.right_limit - x
 
-    for word, is_b in _tokens(rich):
-        w = _word_width(word, bold if is_b else reg, size, ls)
+    for pieces in _tokens(rich):
+        w = _pieces_width(pieces, reg, bold, size, ls)
         add = w if not cur else cur_w + space + w
         if cur and add > width_limit(line_idx) + 0.5:
-            lines.append(_place(cur, line_idx, unit, first_x, cont_x, space, gap))
+            lines.append(_place(cur, line_idx, unit, first_x, cont_x, space, gap, reg, bold, size, ls))
             line_idx += 1
-            cur, cur_w = [(word, is_b, w)], w
+            cur, cur_w = [(pieces, w)], w
         else:
-            cur.append((word, is_b, w))
+            cur.append((pieces, w))
             cur_w = add
     if cur:
-        lines.append(_place(cur, line_idx, unit, first_x, cont_x, space, gap))
+        lines.append(_place(cur, line_idx, unit, first_x, cont_x, space, gap, reg, bold, size, ls))
 
     if not lines:
         return [], True
@@ -536,19 +564,22 @@ def layout_unit(unit: TextUnit, rich: str, resolver: FontResolver, scale: float 
     return lines, fits
 
 
-def _place(cur, idx, unit, first_x, cont_x, space, gap):
+def _place(cur, idx, unit, first_x, cont_x, space, gap, reg, bold, size, ls):
     if idx < len(unit.lines):
         baseline = unit.lines[idx].baseline
     else:
         baseline = unit.lines[-1].baseline + gap * (idx - len(unit.lines) + 1)
     x = first_x if idx == 0 else cont_x
-    total = sum(w for _, _, w in cur) + space * (len(cur) - 1)
+    total = sum(w for _, w in cur) + space * (len(cur) - 1)
     if unit.align == "center":
         center = (unit.bbox[0] + unit.bbox[2]) / 2
         x = center - total / 2
     placed = []
-    for word, is_b, w in cur:
-        placed.append((x, word, is_b))
+    for pieces, w in cur:
+        px = x
+        for text, is_b in pieces:
+            placed.append((px, text, is_b))
+            px += _word_width(text, bold if is_b else reg, size, ls)
         x += w + space
     return baseline, placed
 
@@ -623,6 +654,8 @@ def apply_edits(
             result.skipped_locked.append(uid)
             continue
         new_text = (new_text or "").strip()
+        if not u.bold_font and "**" not in u.rich:
+            new_text = new_text.replace("**", "")
         if new_text == u.rich.strip() or new_text == u.text.strip():
             continue
         plain = re.sub(r"\*\*", "", new_text)
