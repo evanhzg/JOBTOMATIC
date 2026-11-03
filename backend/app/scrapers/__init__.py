@@ -1,38 +1,35 @@
-from typing import List
-from .base import JobPosting
-from .france_travail import FranceTravailScraper
-from .hellowork import HelloWorkScraper
-from .interim import InterimAgenciesScraper
-from .indeed import IndeedScraper
+"""Source registry. Each module registers one scraper class in SCRAPER_MODULES.
 
-async def run_all_scrapers(query: str, location: str, radius_km: int, contract_types: List[str], platforms: List[str]) -> List[JobPosting]:
-    all_results: List[JobPosting] = []
+Modules are imported defensively so a broken/missing optional dependency in one
+source never takes the others down.
+"""
+from __future__ import annotations
 
-    # Map platforms to instances
-    scrapers = []
-    plats_lower = [p.lower() for p in platforms] if platforms else ["france travail", "indeed", "hellowork", "adecco", "manpower"]
+import importlib
+import logging
+from typing import Dict, Type
 
-    if any("france travail" in p or "pole" in p for p in plats_lower):
-        scrapers.append(FranceTravailScraper())
-    if any("hellowork" in p for p in plats_lower):
-        scrapers.append(HelloWorkScraper())
-    if any("indeed" in p for p in plats_lower):
-        scrapers.append(IndeedScraper())
-    if any("adecco" in p or "manpower" in p or "randstad" in p or "intérim" in p for p in plats_lower):
-        scrapers.append(InterimAgenciesScraper())
+from .base import BaseScraper, JobPosting, ScraperError, SearchParams  # noqa: F401
 
-    # Fallback to at least FranceTravail & Interim if empty
-    if not scrapers:
-        scrapers = [FranceTravailScraper(), InterimAgenciesScraper()]
+log = logging.getLogger(__name__)
 
-    for s in scrapers:
+# module name -> class name
+SCRAPER_MODULES = {
+    "france_travail": "FranceTravailScraper",
+    "la_bonne_alternance": "LaBonneAlternanceScraper",
+    "apec": "ApecScraper",
+    "adzuna": "AdzunaScraper",
+    "jooble": "JoobleScraper",
+}
+
+
+def load_scrapers() -> Dict[str, Type[BaseScraper]]:
+    found: Dict[str, Type[BaseScraper]] = {}
+    for mod_name, cls_name in SCRAPER_MODULES.items():
         try:
-            items = await s.search(query, location, radius_km, contract_types)
-            for item in items:
-                # Deduplicate by external_id
-                if not any(existing.external_id == item.external_id for existing in all_results):
-                    all_results.append(item)
-        except Exception as e:
-            print(f"Error executing scraper {s.__class__.__name__}: {e}")
-
-    return all_results
+            mod = importlib.import_module(f".{mod_name}", __name__)
+            cls = getattr(mod, cls_name)
+            found[cls.key] = cls
+        except Exception as e:  # pragma: no cover - depends on optional deps
+            log.warning("scraper %s unavailable: %s", mod_name, e)
+    return found

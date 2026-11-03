@@ -52,3 +52,5 @@ Thumbs.db
 backend/.pytest_cache/
 backend/storage/fonts/
 backend/data/accounts/
+backend/venv
+frontend/node_modules
