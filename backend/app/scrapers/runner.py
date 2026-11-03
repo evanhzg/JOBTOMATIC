@@ -54,7 +54,9 @@ def list_sources(credentials: Dict[str, Dict[str, str]]) -> List[dict]:
         out.append({
             "key": key, "label": cls.label, "help": cls.help,
             "required_credentials": list(cls.required_credentials),
+            "optional_credentials": list(getattr(cls, "optional_credentials", [])),
             "configured": inst.is_configured(),
+            "has_credentials": sorted(k for k, v in ((credentials or {}).get(key) or {}).items() if v),
         })
     return out
 

@@ -131,6 +131,7 @@ class FranceTravailScraper(BaseScraper):
     key = "france_travail"
     label = "France Travail"
     required_credentials: List[str] = []
+    optional_credentials: List[str] = ["client_id", "client_secret"]
     help = (
         "Fonctionne sans identifiants (site public candidat.francetravail.fr, offres partenaires incluses). "
         "Optionnel : client_id + client_secret d'une application francetravail.io abonnée à l'API "

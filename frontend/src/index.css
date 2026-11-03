@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Broadsheet palette, after seaharvest.net.au */
+:root {
+  --ink: #231f20;
+  --navy: #26498d;
+  --paper: #f3f1ec;
+  --cream: #fffcf9;
+  --muted: #6b6566;
+  --rule: #231f20;
+  --wash: #e6ebf4;     /* pale navy wash for highlights */
+  --alert: #a3341f;
+}
+
+html, body { background: var(--paper); color: var(--ink); }
+body {
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  /* paper grain */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .14 0 0 0 0 .12 0 0 0 0 .12 0 0 0 .05 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+::selection { background: var(--navy); color: var(--cream); }
+
+@layer components {
+  .frame { @apply border-[1.5px] border-ink; }
+  .cell { @apply border-ink; }
+  .label { @apply font-mono text-[11px] uppercase tracking-[0.08em] font-bold; }
+  .kicker { @apply font-mono text-[12px] uppercase tracking-[0.06em]; }
+  .display { @apply font-display font-extrabold uppercase leading-[0.92] tracking-[-0.01em]; }
+  .dashed { border: 1.5px dashed var(--ink); }
+  .leader { @apply flex items-baseline gap-2 font-mono text-[12.5px] uppercase; }
+  .leader > .dots { @apply flex-1 border-b-[1.5px] border-dotted border-ink/70 translate-y-[-3px]; }
+
+  .btn { @apply inline-flex items-center justify-center gap-2 border-[1.5px] border-ink px-3 py-1.5 font-mono text-[12px] font-bold uppercase tracking-[0.05em] bg-transparent text-ink transition-colors hover:bg-ink hover:text-cream disabled:opacity-40 disabled:pointer-events-none; }
+  .btn-ink { @apply btn bg-ink text-cream hover:bg-navy hover:border-navy; }
+  .btn-navy { @apply btn bg-navy border-navy text-cream hover:bg-ink hover:border-ink; }
+  .btn-sm { @apply px-2 py-1 text-[11px]; }
+  .btn-ghost { @apply inline-flex items-center gap-1 font-mono text-[11px] font-bold uppercase underline decoration-[1.5px] underline-offset-4 hover:text-navy disabled:opacity-40; }
+
+  .field { @apply w-full border-[1.5px] border-ink bg-cream px-2.5 py-1.5 text-[14px] outline-none focus:border-navy focus:shadow-[3px_3px_0_var(--navy)]; }
+  .field-label { @apply label mb-1 block; }
+
+  .chip { @apply inline-flex items-center gap-1 border-[1.5px] border-ink px-1.5 py-[1px] font-mono text-[10.5px] uppercase font-bold whitespace-nowrap; }
+  .chip-on { @apply chip bg-ink text-cream; }
+  .chip-navy { @apply chip bg-navy border-navy text-cream; }
+  .chip-soft { @apply chip border-ink/30 text-muted; }
+
+  .seg { @apply inline-flex border-[1.5px] border-ink; }
+  .seg > button { @apply px-3 py-1 font-mono text-[11.5px] font-bold uppercase; }
+  .seg > button + button { @apply border-l-[1.5px] border-ink; }
+  .seg > button[data-on="true"] { @apply bg-ink text-cream; }
+}
+
+/* scrollbars that fit the paper */
+* { scrollbar-width: thin; scrollbar-color: var(--ink) transparent; }

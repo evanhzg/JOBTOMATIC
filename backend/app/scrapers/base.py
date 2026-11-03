@@ -61,6 +61,8 @@ class BaseScraper(ABC):
     # Credential keys this source needs (read from settings.source_credentials).
     # A scraper with missing required creds is reported as "needs setup", not run.
     required_credentials: ClassVar[List[str]] = []
+    # Credential keys that unlock a better mode but are not needed.
+    optional_credentials: ClassVar[List[str]] = []
     # One-line help for the settings UI (where to get credentials, limits, etc.).
     help: ClassVar[str] = ""
 

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none" stroke="#231f20" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round">
+  <!-- plasma tufts (Rotom) -->
+  <path d="M44 33 L36 22 L46 21 L38 8"/>
+  <path d="M76 33 L84 22 L74 21 L82 8"/>
+  <!-- side plasma arms -->
+  <path d="M22 66 L11 60 L15 72 L5 70"/>
+  <path d="M98 66 L109 60 L105 72 L115 70"/>
+  <!-- machine body -->
+  <rect x="22" y="33" width="76" height="76" rx="13"/>
+  <path d="M22 50 H98"/>
+  <circle cx="86" cy="41.5" r="1.6" fill="#231f20"/>
+  <!-- porthole -->
+  <circle cx="60" cy="80" r="20"/>
+  <!-- eyes -->
+  <ellipse cx="52.5" cy="77" rx="3.4" ry="5.2" fill="#26498d" stroke="#26498d" stroke-width="2"/>
+  <ellipse cx="67.5" cy="77" rx="3.4" ry="5.2" fill="#26498d" stroke="#26498d" stroke-width="2"/>
+  <path d="M54 88 Q60 92 66 88" stroke-width="4.5"/>
+</svg>
