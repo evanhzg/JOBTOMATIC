@@ -1,32 +1,24 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-  content: [
-    "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}",
-  ],
+  content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {
-        pickles: {
-          bg: '#F4F4F0',          // Pale gray-whiteish canvas (Pickles.app)
-          card: '#FFFFFF',        // Pure white card surfaces
-          cardMuted: '#FAF9F6',   // Inset gray-white surface
-          text: '#18181B',        // Anthracite dark text
-          subtle: '#52525B',      // Muted anthracite secondary text
-          border: '#D4D4D8',      // Crisp hairline borders
-          borderDark: '#27272A',
-          green: '#5F7A48',       // Refined muted pickle olive/sage (non-flashy)
-          greenHover: '#4D643A',
-          greenLight: '#EEF3E9',  // Subtle green tint background
-          amber: '#B45309',       // Muted warm alert
-          amberLight: '#FEF3C7',
-        }
+        ink: "#231f20",
+        navy: "#26498d",
+        paper: "#f3f1ec",
+        cream: "#fffcf9",
+        muted: "#6b6566",
+        rule: "#231f20",
+        wash: "#e6ebf4",
+        alert: "#a3341f",
       },
       fontFamily: {
-        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
-        mono: ['JetBrains Mono', 'Fira Code', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
-      }
+        display: ['"Spectral"', "Georgia", "serif"],
+        mono: ['"Space Mono"', "ui-monospace", "monospace"],
+        body: ['"IBM Plex Sans"', "system-ui", "sans-serif"],
+      },
     },
   },
   plugins: [],
-}
+};

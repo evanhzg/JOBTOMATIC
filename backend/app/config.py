@@ -1,5 +1,7 @@
+import os
 from pathlib import Path
-from pydantic import BaseModel
+
+APP_NAME = "Plonge"
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
@@ -7,22 +9,14 @@ STORAGE_DIR = BASE_DIR / "storage"
 CVS_DIR = STORAGE_DIR / "cvs"
 SCREENSHOTS_DIR = STORAGE_DIR / "screenshots"
 IMPORTED_CV_DIR = STORAGE_DIR / "imported_cv"
+FONTS_DIR = STORAGE_DIR / "fonts"
+ACCOUNTS_DIR = DATA_DIR / "accounts"        # per-account CLI config dirs (CLAUDE_CONFIG_DIR, CODEX_HOME...)
 TEMPLATES_DIR = BASE_DIR / "templates"
-DB_PATH = DATA_DIR / "jobhunter.db"
+DB_PATH = Path(os.getenv("PLONGE_DB", DATA_DIR / "plonge.db"))
+LEGACY_DB_PATH = DATA_DIR / "jobhunter.db"
 
-DATA_DIR.mkdir(parents=True, exist_ok=True)
-CVS_DIR.mkdir(parents=True, exist_ok=True)
-SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
-IMPORTED_CV_DIR.mkdir(parents=True, exist_ok=True)
-TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
+for d in (DATA_DIR, CVS_DIR, SCREENSHOTS_DIR, IMPORTED_CV_DIR, FONTS_DIR, ACCOUNTS_DIR, TEMPLATES_DIR):
+    d.mkdir(parents=True, exist_ok=True)
 
-class SettingsSchema(BaseModel):
-    is_autopilot_enabled: bool = False
-    is_paused: bool = False
-    match_score_threshold: int = 75
-    daily_application_limit: int = 20
-    applications_sent_today: int = 0
-    gmail_address: str = ""
-    gmail_app_password: str = ""
-    imap_poll_interval_mins: int = 3
-    search_interval_mins: int = 15
+# The candidate's address: used on tailored CVs, as reply-to and as default sender.
+DEFAULT_CANDIDATE_EMAIL = "evhoizey@gmail.com"

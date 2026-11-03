@@ -1,882 +1,698 @@
+"""Plonge API."""
+from __future__ import annotations
+
 import asyncio
-import json
-import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any, Dict, List, Optional
-import aiosqlite
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File, Body
+
+from fastapi import Body, FastAPI, File, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from pypdf import PdfReader
 
-from .config import CVS_DIR, DB_PATH, SCREENSHOTS_DIR, IMPORTED_CV_DIR
-from .database import get_db, init_db, log_activity
-from .agy_bridge import ai_bridge
-from .cv_renderer import cv_renderer
-from .scrapers import run_all_scrapers
-from .apply_engine import apply_engine
-from .inbox_tracker import inbox_tracker
-from .scheduler import scheduler
+from . import applications, mailer, scheduler, searches, tasks
+from . import database as db
+from . import pipeline  # noqa: F401  (registers task handlers)
+from .ai import linking, pool
+from .config import APP_NAME, BASE_DIR
+from .cv import pdf_engine as pe
+from .cv import service as cv
+from .events import publish, subscribe, unsubscribe
 
-# Connected WebSocket clients
-connected_clients: List[WebSocket] = []
-
-async def broadcast_ws(event_type: str, data: Any):
-    msg = json.dumps({"type": event_type, "data": data})
-    for client in list(connected_clients):
-        try:
-            await client.send_text(msg)
-        except Exception:
-            if client in connected_clients:
-                connected_clients.remove(client)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
-    await init_db()
-    await scheduler.start()
+    await db.init_db()
+    # First launch with a CV carried over from the old app: read the profile from it.
+    if not (await db.get_profile()).get("full_name") and await db.get_master_cv():
+        await tasks.enqueue("profile_from_cv", None, {}, priority=5)
+    await scheduler.runner.start()
     yield
-    # Shutdown
-    await scheduler.stop()
+    await scheduler.runner.stop()
 
-app = FastAPI(title="JobHunter AGY API", lifespan=lifespan)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app = FastAPI(title=f"{APP_NAME} API", lifespan=lifespan)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-# Mount storage directories for PDFs and screenshots
-app.mount("/static/cvs", StaticFiles(directory=str(CVS_DIR)), name="cvs")
-app.mount("/static/screenshots", StaticFiles(directory=str(SCREENSHOTS_DIR)), name="screenshots")
-app.mount("/static/imported", StaticFiles(directory=str(IMPORTED_CV_DIR)), name="imported")
 
-# Pydantic Request Models
-class MetricVariantRequest(BaseModel):
-    metric_id: str
-class SearchQueryCreate(BaseModel):
-    query_text: str
-    location: str
-    radius_km: int = 25
-    contract_types: List[str] = ["Alternance", "Intérim"]
-    platforms: List[str] = ["France Travail", "Indeed", "HelloWork"]
+def bad(e: Exception, code: int = 400):
+    raise HTTPException(status_code=code, detail=str(e))
 
-class JobStatusUpdate(BaseModel):
-    status: str
 
-class ProfileUpdate(BaseModel):
-    full_name: str
-    email: str
-    phone: str
-    city: str
-    headline: str
-    summary: str
-    skills: List[str]
-    experiences: List[Dict[str, Any]]
-    education: List[Dict[str, Any]]
-    languages: List[str] = []
-    preferences: Dict[str, Any] = {}
-
-class SettingsUpdate(BaseModel):
-    is_autopilot_enabled: Optional[bool] = None
-    is_paused: Optional[bool] = None
-    match_score_threshold: Optional[int] = None
-    daily_application_limit: Optional[int] = None
-    gmail_address: Optional[str] = None
-    gmail_app_password: Optional[str] = None
-    ai_provider: Optional[str] = None
-    wait_for_batch_validation: Optional[bool] = None
-    anthropic_api_key: Optional[str] = None
-
-# Endpoints
+# ================================================================== general
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "service": "JobHunter AGY"}
+    return {"status": "ok", "app": APP_NAME}
 
-@app.get("/api/stats")
-async def get_stats():
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT status, COUNT(*) as cnt FROM jobs GROUP BY status")
-        counts = {row["status"]: row["cnt"] for row in await cur.fetchall()}
 
-        cur = await db.execute("SELECT * FROM settings WHERE id = 1")
-        settings = dict(await cur.fetchone())
+@app.get("/api/status")
+async def status():
+    return await scheduler.status()
 
-        cur = await db.execute("SELECT COUNT(*) FROM search_queries WHERE is_active = 1")
-        queries_count = (await cur.fetchone())[0]
 
-    return {
-        "discovered": counts.get("discovered", 0),
-        "tailored": counts.get("tailored", 0),
-        "applied": counts.get("applied", 0),
-        "answer_received": counts.get("answer_received", 0),
-        "interview": counts.get("interview", 0),
-        "archived": counts.get("archived", 0),
-        "total_jobs": sum(counts.values()),
-        "applications_today": settings.get("applications_sent_today", 0),
-        "daily_limit": settings.get("daily_application_limit", 20),
-        "autopilot_enabled": bool(settings.get("is_autopilot_enabled", 0)),
-        "is_paused": bool(settings.get("is_paused", 0)),
-        "threshold": settings.get("match_score_threshold", 75),
-        "active_queries": queries_count,
-        "ai_provider": settings.get("ai_provider", "agy"),
-        "wait_for_batch_validation": bool(settings.get("wait_for_batch_validation", 0))
-    }
+@app.get("/api/logs")
+async def logs(limit: int = 80):
+    return await db.fetch_all("logs", "SELECT * FROM logs ORDER BY id DESC LIMIT ?", (limit,))
+
+
+@app.websocket("/ws")
+async def ws(websocket: WebSocket):
+    await websocket.accept()
+    q = subscribe()
+    try:
+        while True:
+            msg = await q.get()
+            await websocket.send_text(msg)
+    except (WebSocketDisconnect, RuntimeError):
+        pass
+    finally:
+        unsubscribe(q)
+
+
+# ================================================================== jobs
+
+JOB_LIST_COLS = ("id, external_id, source, source_label, title, company, location, contract_type, url, apply_url, "
+                 "contact_email, salary, posted_at, remote, search_id, status, archived_reason, match_score, ai_summary, "
+                 "match_reasons, strengths, gaps, is_school_ad, school_reason, ats_before, ats_after, tailored_cv_path, "
+                 "apply_method, applied_at, answer_at, answer_class, answer_snippet, starred, notes, created_at, updated_at, "
+                 "substr(description, 1, 400) AS description_preview")
+
 
 @app.get("/api/jobs")
-async def get_jobs():
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT * FROM jobs ORDER BY id DESC")
-        jobs = [dict(row) for row in await cur.fetchall()]
-
-        # Parse JSON fields
-        for j in jobs:
-            if j.get("match_reasons"):
-                try:
-                    j["match_reasons"] = json.loads(j["match_reasons"])
-                except Exception:
-                    j["match_reasons"] = []
-            if j.get("tailored_skills"):
-                try:
-                    j["tailored_skills"] = json.loads(j["tailored_skills"])
-                except Exception:
-                    j["tailored_skills"] = []
-            if j.get("cv_improvement_suggestions"):
-                try:
-                    j["cv_improvement_suggestions"] = json.loads(j["cv_improvement_suggestions"])
-                except Exception:
-                    j["cv_improvement_suggestions"] = None
-                except Exception:
-                    j["tailored_skills"] = []
-
+async def list_jobs(status: Optional[str] = None, q: Optional[str] = None, min_score: Optional[int] = None,
+                    source: Optional[str] = None, contract: Optional[str] = None, archived: bool = False,
+                    limit: int = 500):
+    where, params = [], []
+    if status:
+        where.append("status IN (%s)" % ",".join("?" for _ in status.split(",")))
+        params += status.split(",")
+    elif not archived:
+        where.append("status != 'archived'")
+    if q:
+        where.append("(title LIKE ? OR company LIKE ? OR location LIKE ? OR description LIKE ?)")
+        params += [f"%{q}%"] * 4
+    if min_score is not None:
+        where.append("match_score >= ?")
+        params.append(min_score)
+    if source:
+        where.append("source = ?")
+        params.append(source)
+    if contract:
+        where.append("contract_type = ?")
+        params.append(contract)
+    sql = f"SELECT {JOB_LIST_COLS} FROM jobs" + (" WHERE " + " AND ".join(where) if where else "")
+    sql += " ORDER BY starred DESC, COALESCE(match_score, -1) DESC, id DESC LIMIT ?"
+    params.append(limit)
+    jobs = await db.fetch_all("jobs", sql, params)
+    fu = await db.fetch_all("followups", "SELECT job_id, status, due_at, seq FROM followups WHERE status IN ('scheduled','manual') ORDER BY due_at")
+    nxt: Dict[int, Dict[str, Any]] = {}
+    for f in fu:
+        nxt.setdefault(f["job_id"], f)
+    for j in jobs:
+        j["next_followup"] = nxt.get(j["id"])
+        j["has_cv"] = bool(j.pop("tailored_cv_path", None))
     return jobs
+
+
+@app.get("/api/jobs/counts")
+async def job_counts():
+    rows = await db.fetch_all("jobs", "SELECT status, COUNT(*) AS n FROM jobs GROUP BY status")
+    return {r["status"]: r["n"] for r in rows}
+
 
 @app.get("/api/jobs/{job_id}")
 async def get_job(job_id: int):
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
-        row = await cur.fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Offre non trouvée")
-        job = dict(row)
-        if job.get("match_reasons"):
-            try:
-                job["match_reasons"] = json.loads(job["match_reasons"])
-            except Exception:
-                job["match_reasons"] = []
-        if job.get("tailored_skills"):
-            try:
-                job["tailored_skills"] = json.loads(job["tailored_skills"])
-            except Exception:
-                job["tailored_skills"] = []
+    job = await db.fetch_one("jobs", "SELECT * FROM jobs WHERE id = ?", (job_id,))
+    if not job:
+        raise HTTPException(404, "Offre introuvable")
+    job["followups"] = await db.fetch_all("followups", "SELECT * FROM followups WHERE job_id = ? ORDER BY seq", (job_id,))
+    job["tasks"] = await db.fetch_all("ai_tasks", "SELECT id, kind, status, last_error, run_after FROM ai_tasks WHERE job_id = ? "
+                                      "AND status IN ('queued','running','failed') ORDER BY id DESC LIMIT 5", (job_id,))
+    job["has_cv"] = bool(job.get("tailored_cv_path") and Path(job["tailored_cv_path"]).exists())
+    job["cv_pages"] = pe.page_count(job["tailored_cv_path"]) if job["has_cv"] else 0
     return job
 
-@app.patch("/api/jobs/{job_id}/status")
-async def update_job_status(job_id: int, payload: JobStatusUpdate):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE jobs SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (payload.status, job_id))
-        await db.commit()
-    await broadcast_ws("job_updated", {"id": job_id, "status": payload.status})
-    return {"status": "ok", "job_id": job_id, "new_status": payload.status}
 
-@app.post("/api/jobs/{job_id}/tailor")
-async def tailor_job(job_id: int):
-    """Manually triggers AGY CV adaptation and PDF generation for a job."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
-        job = dict(await cur.fetchone())
+class JobPatch(BaseModel):
+    status: Optional[str] = None
+    notes: Optional[str] = None
+    starred: Optional[bool] = None
+    contact_email: Optional[str] = None
+    cover_letter: Optional[str] = None
+    email_subject: Optional[str] = None
+    archived_reason: Optional[str] = None
 
-        cur = await db.execute("SELECT * FROM profile WHERE id = 1")
-        profile = dict(await cur.fetchone())
-        for f in ["skills", "experiences", "education", "languages", "preferences"]:
-            if isinstance(profile.get(f), str):
-                try:
-                    profile[f] = json.loads(profile[f])
-                except Exception:
-                    pass
 
-    await log_activity("INFO", f"Démarrage de l'adaptation du CV pour {job['title']}...", job_id)
-    tailored = await ai_bridge.tailor_cv_and_letter(job["title"], job["company"], job["description"], profile)
-    pdf_path = await cv_renderer.generate_pdf(job_id, profile, tailored, job["title"], job["company"])
+@app.patch("/api/jobs/{job_id}")
+async def patch_job(job_id: int, payload: JobPatch):
+    values = payload.model_dump(exclude_none=True)
+    if values.get("status") and values["status"] not in ("new", "ready", "applied", "answered", "interview", "archived"):
+        raise HTTPException(400, "Statut inconnu")
+    await db.update("jobs", job_id, values)
+    if values.get("status") in ("answered", "interview", "archived"):
+        await applications.cancel_followups(job_id, "statut changé à la main")
+    publish("job_updated", {"id": job_id})
+    return {"ok": True}
 
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("""
-            UPDATE jobs
-            SET status = 'tailored',
-                tailored_title = ?,
-                tailored_summary = ?,
-                tailored_skills = ?,
-                tailored_cv_path = ?,
-                cover_letter = ?,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-        """, (
-            tailored.get("tailored_headline"),
-            tailored.get("tailored_summary"),
-            json.dumps(tailored.get("highlighted_skills", []), ensure_ascii=False),
-            pdf_path,
-            tailored.get("cover_letter"),
-            job_id
-        ))
-        await db.commit()
-
-    await broadcast_ws("job_updated", {"id": job_id, "status": "tailored"})
-    return {"status": "ok", "pdf_path": pdf_path, "tailored": tailored}
-
-@app.post("/api/jobs/{job_id}/improve-cv")
-async def improve_cv_for_job(job_id: int):
-    """Uses AI to audit and boost a lower-scoring CV for a specific job."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
-        job = dict(await cur.fetchone())
-
-        cur = await db.execute("SELECT * FROM profile WHERE id = 1")
-        profile = dict(await cur.fetchone())
-        for f in ["skills", "experiences", "education", "languages", "preferences"]:
-            if isinstance(profile.get(f), str):
-                try:
-                    profile[f] = json.loads(profile[f])
-                except Exception:
-                    pass
-
-    await log_activity("INFO", f"Lancement de l'outil 'Améliorer mon CV' pour {job['title']}...", job_id)
-    improvements = await ai_bridge.improve_cv_for_job(job["title"], job["company"], job["description"], profile, job.get("match_score", 60))
-
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "UPDATE jobs SET cv_improvement_suggestions = ? WHERE id = ?",
-            (json.dumps(improvements, ensure_ascii=False), job_id)
-        )
-        await db.commit()
-
-    await broadcast_ws("job_updated", {"id": job_id})
-    return {"status": "ok", "improvements": improvements}
-
-@app.post("/api/jobs/{job_id}/apply-improvements")
-async def apply_improvements(job_id: int):
-    """Applies the AI-generated improvements directly to the tailored CV and compiles an updated PDF."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
-        job = dict(await cur.fetchone())
-
-        if not job.get("cv_improvement_suggestions"):
-            raise HTTPException(status_code=400, detail="Aucune suggestion d'amélioration disponible")
-        improvements = json.loads(job["cv_improvement_suggestions"])
-
-        cur = await db.execute("SELECT * FROM profile WHERE id = 1")
-        profile = dict(await cur.fetchone())
-        for f in ["skills", "experiences", "education", "languages", "preferences"]:
-            if isinstance(profile.get(f), str):
-                try:
-                    profile[f] = json.loads(profile[f])
-                except Exception:
-                    pass
-
-    # Merge boosted skills & summary
-    new_score = improvements.get("projected_score", 90)
-    current_skills = profile.get("skills", [])
-    merged_skills = list(set(current_skills + improvements.get("skills_to_add", [])))
-
-    tailored_data = {
-        "tailored_headline": improvements.get("enhanced_headline", job.get("tailored_title", job["title"])),
-        "tailored_summary": improvements.get("boosted_summary", job.get("tailored_summary", "")),
-        "highlighted_skills": merged_skills[:8],
-        "adapted_experiences": [
-            {
-                "role": profile["experiences"][0]["role"] if profile.get("experiences") else "Poste Clé",
-                "company": profile["experiences"][0]["company"] if profile.get("experiences") else "Entreprise",
-                "period": profile["experiences"][0]["period"] if profile.get("experiences") else "2023 - 2024",
-                "location": profile.get("city", "Rouen"),
-                "details": improvements.get("boosted_bullet_points", ["Missions optimisées"])
-            }
-        ]
-    }
-
-    pdf_path = await cv_renderer.generate_pdf(job_id, profile, tailored_data, job["title"], job["company"])
-
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("""
-            UPDATE jobs
-            SET match_score = ?,
-                tailored_title = ?,
-                tailored_summary = ?,
-                tailored_skills = ?,
-                tailored_cv_path = ?,
-                status = 'tailored',
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-        """, (
-            new_score,
-            tailored_data["tailored_headline"],
-            tailored_data["tailored_summary"],
-            json.dumps(tailored_data["highlighted_skills"], ensure_ascii=False),
-            pdf_path,
-            job_id
-        ))
-        await db.commit()
-
-    await log_activity("SUCCESS", f"Améliorations IA appliquées avec succès pour {job['title']} ! Nouveau score estimé : {new_score}%", job_id)
-    await broadcast_ws("job_updated", {"id": job_id, "status": "tailored", "match_score": new_score})
-    return {"status": "ok", "new_score": new_score, "pdf_path": pdf_path}
-
-@app.post("/api/jobs/batch-validate")
-async def batch_validate_and_apply():
-    """Validates and applies to all tailored jobs currently queued in a single batch dispatch."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT * FROM jobs WHERE status = 'tailored'")
-        tailored_jobs = [dict(r) for r in await cur.fetchall()]
-
-        cur = await db.execute("SELECT * FROM profile WHERE id = 1")
-        profile = dict(await cur.fetchone())
-        for f in ["skills", "experiences", "education", "languages", "preferences"]:
-            if isinstance(profile.get(f), str):
-                try:
-                    profile[f] = json.loads(profile[f])
-                except Exception:
-                    pass
-
-        cur = await db.execute("SELECT * FROM settings WHERE id = 1")
-        settings = dict(await cur.fetchone())
-
-    applied_ids = []
-    for job in tailored_jobs:
-        if job.get("contact_email") and "@" in job["contact_email"]:
-            success = await apply_engine.apply_via_email(job, profile, settings)
-        else:
-            success = await apply_engine.apply_via_web_form(job, profile)
-        if success:
-            applied_ids.append(job["id"])
-
-    await log_activity("SUCCESS", f"Validation par lot effectuée : {len(applied_ids)} candidatures envoyées !")
-    await broadcast_ws("jobs_batch_applied", {"applied_count": len(applied_ids)})
-    return {"status": "ok", "applied_count": len(applied_ids), "job_ids": applied_ids}
-
-@app.post("/api/jobs/{job_id}/apply")
-async def apply_to_job(job_id: int):
-    """Manually triggers application submission (via email or web form)."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
-        job = dict(await cur.fetchone())
-
-        cur = await db.execute("SELECT * FROM profile WHERE id = 1")
-        profile = dict(await cur.fetchone())
-        for f in ["skills", "experiences", "education", "languages", "preferences"]:
-            if isinstance(profile.get(f), str):
-                try:
-                    profile[f] = json.loads(profile[f])
-                except Exception:
-                    pass
-
-        cur = await db.execute("SELECT * FROM settings WHERE id = 1")
-        settings = dict(await cur.fetchone())
-
-    # Ensure CV is tailored first if missing
-    if not job.get("tailored_cv_path") or not os.path.exists(job["tailored_cv_path"]):
-        tailored = await ai_bridge.tailor_cv_and_letter(job["title"], job["company"], job["description"], profile)
-        pdf_path = await cv_renderer.generate_pdf(job_id, profile, tailored, job["title"], job["company"])
-        job["tailored_cv_path"] = pdf_path
-        job["cover_letter"] = tailored.get("cover_letter")
-        job["tailored_title"] = tailored.get("tailored_headline")
-
-    if job.get("contact_email") and "@" in job["contact_email"]:
-        success = await apply_engine.apply_via_email(job, profile, settings)
-    else:
-        success = await apply_engine.apply_via_web_form(job, profile)
-
-    await broadcast_ws("job_updated", {"id": job_id, "status": "applied"})
-    return {"status": "ok", "applied": success}
-
-    await broadcast_ws("job_updated", {"id": job_id, "status": "applied"})
-    return {"status": "ok", "applied": success}
-
-@app.post("/api/jobs/{job_id}/simulate-reply")
-async def simulate_reply(job_id: int):
-    """Simulates an incoming recruiter answer for testing reply detection."""
-    success = await inbox_tracker.simulate_mock_reply(job_id)
-    await broadcast_ws("job_updated", {"id": job_id, "status": "answer_received"})
-    return {"status": "ok", "simulated": success}
 
 @app.delete("/api/jobs/{job_id}")
 async def delete_job(job_id: int):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
-        await db.commit()
-    await broadcast_ws("job_deleted", {"id": job_id})
-    return {"status": "ok", "deleted_id": job_id}
+    await db.execute("DELETE FROM followups WHERE job_id = ?", (job_id,))
+    await db.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+    publish("job_deleted", {"id": job_id})
+    return {"ok": True}
 
-@app.get("/api/cv-preview/{job_id}")
-async def cv_preview(job_id: int):
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT tailored_cv_path FROM jobs WHERE id = ?", (job_id,))
-        row = await cur.fetchone()
-        if not row or not row["tailored_cv_path"] or not os.path.exists(row["tailored_cv_path"]):
-            raise HTTPException(status_code=404, detail="CV PDF non trouvé")
-        return FileResponse(row["tailored_cv_path"], media_type="application/pdf")
 
-# Search Queries Endpoints
+@app.post("/api/jobs/{job_id}/score")
+async def score_job(job_id: int):
+    return {"task_id": await tasks.enqueue("score", job_id, priority=10)}
 
-@app.get("/api/search-queries")
-async def get_search_queries():
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT * FROM search_queries ORDER BY id DESC")
-        queries = [dict(r) for r in await cur.fetchall()]
-        for q in queries:
-            try:
-                q["contract_types"] = json.loads(q["contract_types"])
-            except Exception:
-                q["contract_types"] = []
-            try:
-                q["platforms"] = json.loads(q["platforms"])
-            except Exception:
-                q["platforms"] = []
-    return queries
 
-@app.post("/api/search-queries")
-async def add_search_query(payload: SearchQueryCreate):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("""
-            INSERT INTO search_queries (query_text, location, radius_km, contract_types, platforms, is_active)
-            VALUES (?, ?, ?, ?, ?, 1)
-        """, (
-            payload.query_text,
-            payload.location,
-            payload.radius_km,
-            json.dumps(payload.contract_types),
-            json.dumps(payload.platforms)
-        ))
-        await db.commit()
-    await log_activity("INFO", f"Nouveau critère de recherche ajouté: '{payload.query_text}' à '{payload.location}'")
-    return {"status": "ok"}
+@app.post("/api/jobs/{job_id}/tailor")
+async def tailor_job(job_id: int):
+    return {"task_id": await tasks.enqueue("tailor", job_id, priority=10)}
 
-@app.delete("/api/search-queries/{query_id}")
-async def delete_search_query(query_id: int):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("DELETE FROM search_queries WHERE id = ?", (query_id,))
-        await db.commit()
-    return {"status": "ok", "deleted_id": query_id}
 
-@app.post("/api/search-queries/run-now")
-async def run_search_now():
-    """Runs immediate scraper run for all active queries."""
-    asyncio.create_task(scheduler.run_cycle(force_search=True))
-    return {"status": "started", "message": "Recherche et évaluation lancées en tâche de fond"}
+@app.post("/api/jobs/{job_id}/apply")
+async def apply_job(job_id: int):
+    try:
+        return await applications.apply(job_id)
+    except mailer.MailNotConfigured as e:
+        bad(e, 412)
+    except ValueError as e:
+        bad(e)
+    except Exception as e:
+        bad(Exception(f"Envoi impossible : {e}"), 502)
 
-# Profile Endpoints
+
+@app.post("/api/jobs/{job_id}/mark-applied")
+async def mark_applied(job_id: int):
+    await applications.mark_applied_manually(job_id)
+    return {"ok": True}
+
+
+@app.post("/api/jobs/apply-ready")
+async def apply_ready():
+    jobs = await db.fetch_all("jobs", "SELECT id FROM jobs WHERE status = 'ready' AND contact_email != '' AND tailored_cv_path IS NOT NULL")
+    sent, errors = 0, []
+    for j in jobs:
+        try:
+            r = await applications.apply(j["id"])
+            sent += r.get("action") == "sent"
+        except Exception as e:
+            errors.append(str(e))
+            if isinstance(e, mailer.MailNotConfigured):
+                break
+    return {"sent": sent, "errors": errors[:5]}
+
+
+@app.put("/api/jobs/{job_id}/cv-edits")
+async def job_cv_edits(job_id: int, edits: Dict[str, str] = Body(...)):
+    try:
+        return await cv.save_job_cv_edits(job_id, edits)
+    except ValueError as e:
+        bad(e)
+
+
+@app.get("/api/jobs/{job_id}/cv.pdf")
+async def job_cv_pdf(job_id: int, download: bool = False):
+    job = await db.fetch_one("jobs", "SELECT tailored_cv_path, title FROM jobs WHERE id = ?", (job_id,))
+    if not job or not job.get("tailored_cv_path") or not Path(job["tailored_cv_path"]).exists():
+        raise HTTPException(404, "CV adapté non disponible")
+    return FileResponse(job["tailored_cv_path"], media_type="application/pdf",
+                        content_disposition_type="attachment" if download else "inline",
+                        filename=Path(job["tailored_cv_path"]).name)
+
+
+@app.get("/api/jobs/{job_id}/cv/page/{n}.png")
+async def job_cv_png(job_id: int, n: int, dpi: int = 110):
+    job = await db.fetch_one("jobs", "SELECT tailored_cv_path FROM jobs WHERE id = ?", (job_id,))
+    if not job or not job.get("tailored_cv_path") or not Path(job["tailored_cv_path"]).exists():
+        raise HTTPException(404, "CV adapté non disponible")
+    png = await asyncio.to_thread(pe.render_page_png, job["tailored_cv_path"], n, min(dpi, 200))
+    return Response(png, media_type="image/png", headers={"Cache-Control": "no-store"})
+
+
+class ImportOffer(BaseModel):
+    url: str = ""
+    text: str = ""
+
+
+@app.post("/api/jobs/import")
+async def import_offer(payload: ImportOffer):
+    if not payload.url.strip() and not payload.text.strip():
+        raise HTTPException(400, "Collez un lien ou le texte de l'offre.")
+    return {"task_id": await tasks.enqueue("import_offer", None, payload.model_dump(), priority=10, dedupe=False)}
+
+
+# ================================================================== searches & sources
+
+class SearchIn(BaseModel):
+    label: str = ""
+    query: str
+    locations: List[str] = []
+    radius_km: int = 30
+    contract_types: List[str] = []
+    remote: str = "any"
+    max_age_days: int = 14
+    sources: List[str] = []
+    exclude_keywords: List[str] = []
+    include_keywords: List[str] = []
+    active: bool = True
+    interval_mins: Optional[int] = None
+
+
+@app.get("/api/searches")
+async def list_searches():
+    rows = await db.fetch_all("searches", "SELECT * FROM searches ORDER BY id DESC")
+    running = set(searches.running_ids())
+    for r in rows:
+        r["running"] = r["id"] in running
+    return rows
+
+
+@app.post("/api/searches")
+async def create_search(payload: SearchIn):
+    sid = await db.insert("searches", payload.model_dump())
+    publish("searches_changed", {})
+    asyncio.create_task(searches.run_search(sid, manual=True))
+    return {"id": sid}
+
+
+@app.put("/api/searches/{sid}")
+async def update_search(sid: int, payload: SearchIn):
+    await db.update("searches", sid, payload.model_dump(), touch=False)
+    publish("searches_changed", {})
+    return {"ok": True}
+
+
+@app.delete("/api/searches/{sid}")
+async def delete_search(sid: int):
+    await db.execute("DELETE FROM searches WHERE id = ?", (sid,))
+    publish("searches_changed", {})
+    return {"ok": True}
+
+
+@app.post("/api/searches/{sid}/run")
+async def run_search(sid: int):
+    asyncio.create_task(searches.run_search(sid, manual=True))
+    return {"started": True}
+
+
+@app.post("/api/searches/run-all")
+async def run_all():
+    for s in await db.fetch_all("searches", "SELECT id FROM searches WHERE active = 1"):
+        asyncio.create_task(searches.run_search(s["id"], manual=True))
+    return {"started": True}
+
+
+@app.get("/api/sources")
+async def sources():
+    from .scrapers.runner import list_sources
+    s = await db.get_settings()
+    return list_sources(s.get("source_credentials") or {})
+
+
+@app.put("/api/sources/credentials")
+async def set_source_credentials(payload: Dict[str, Dict[str, str]] = Body(...)):
+    s = await db.get_settings()
+    creds = s.get("source_credentials") or {}
+    for key, values in payload.items():
+        cur = creds.get(key, {})
+        cur.update({k: v.strip() for k, v in values.items() if v is not None and "•" not in v})
+        creds[key] = {k: v for k, v in cur.items() if v}
+    await db.set_settings({"source_credentials": creds})
+    return {"ok": True}
+
+
+# ================================================================== CV & profile
+
+@app.get("/api/cv")
+async def get_cv():
+    m = await cv.master()
+    versions = await db.fetch_all("cv_versions", "SELECT id, label, kind, is_master, created_at, edits FROM cv_versions ORDER BY id DESC")
+    for v in versions:
+        v["edited_blocks"] = len(v.pop("edits") or {})
+    out: Dict[str, Any] = {"master": None, "versions": versions, "units": [], "profile": await db.get_profile()}
+    if m:
+        units = await asyncio.to_thread(pe.extract_units, m["pdf_path"])
+        out["master"] = {"id": m["id"], "label": m["label"], "kind": m["kind"], "audit": m.get("audit"),
+                         "pages": pe.page_count(m["pdf_path"]), "created_at": m["created_at"],
+                         "measured": cv.measure(units)}
+        out["units"] = [u.public() for u in units]
+    return out
+
+
+@app.post("/api/cv/upload")
+async def upload_cv(file: UploadFile = File(...)):
+    if not (file.filename or "").lower().endswith(".pdf"):
+        raise HTTPException(400, "Importez un PDF (exporté depuis Canva, Word, etc.).")
+    try:
+        res = await cv.import_cv(file.filename, await file.read())
+    except ValueError as e:
+        bad(e)
+    res["task_id"] = await tasks.enqueue("profile_from_cv", None, {"version": res["version_id"]}, priority=10)
+    return res
+
+
+@app.get("/api/cv/versions/{vid}.pdf")
+async def version_pdf(vid: int):
+    v = await db.fetch_one("cv_versions", "SELECT pdf_path, label FROM cv_versions WHERE id = ?", (vid,))
+    if not v or not Path(v["pdf_path"]).exists():
+        raise HTTPException(404, "Version introuvable")
+    return FileResponse(v["pdf_path"], media_type="application/pdf", content_disposition_type="inline")
+
+
+@app.get("/api/cv/versions/{vid}/page/{n}.png")
+async def version_png(vid: int, n: int, dpi: int = 110):
+    v = await db.fetch_one("cv_versions", "SELECT pdf_path FROM cv_versions WHERE id = ?", (vid,))
+    if not v or not Path(v["pdf_path"]).exists():
+        raise HTTPException(404, "Version introuvable")
+    png = await asyncio.to_thread(pe.render_page_png, v["pdf_path"], n, min(dpi, 200))
+    return Response(png, media_type="image/png", headers={"Cache-Control": "max-age=3600"})
+
+
+@app.post("/api/cv/versions/{vid}/master")
+async def version_master(vid: int):
+    try:
+        await cv.set_master(vid)
+    except ValueError as e:
+        bad(e)
+    return {"ok": True}
+
+
+@app.delete("/api/cv/versions/{vid}")
+async def version_delete(vid: int):
+    v = await db.fetch_one("cv_versions", "SELECT * FROM cv_versions WHERE id = ?", (vid,))
+    if not v:
+        raise HTTPException(404, "Version introuvable")
+    if v["is_master"]:
+        raise HTTPException(400, "Choisissez d'abord une autre version principale.")
+    await db.execute("DELETE FROM cv_versions WHERE id = ?", (vid,))
+    publish("cv_updated", {})
+    return {"ok": True}
+
+
+@app.post("/api/cv/audit")
+async def cv_audit(target: str = Body("", embed=True)):
+    p = await db.get_profile()
+    target = target.strip() or ", ".join(p.get("target_roles") or []) or "postes visés"
+    return {"task_id": await tasks.enqueue("audit", None, {"target": target}, priority=10)}
+
+
+@app.post("/api/cv/preview")
+async def cv_preview(edits: Dict[str, str] = Body(..., embed=True)):
+    try:
+        return await cv.preview(edits)
+    except ValueError as e:
+        bad(e)
+
+
+@app.get("/api/cv/preview/{token}/page/{n}.png")
+async def cv_preview_png(token: str, n: int, dpi: int = 110):
+    path = cv.PREVIEW_DIR / f"{token}.pdf"
+    if not token.isalnum() or not path.exists():
+        raise HTTPException(404, "Aperçu expiré")
+    png = await asyncio.to_thread(pe.render_page_png, path, n, min(dpi, 200))
+    return Response(png, media_type="image/png")
+
+
+class SaveVersion(BaseModel):
+    edits: Dict[str, str]
+    label: str = ""
+
+
+@app.post("/api/cv/save")
+async def cv_save(payload: SaveVersion):
+    try:
+        return await cv.save_version(payload.edits, payload.label)
+    except ValueError as e:
+        bad(e)
+
+
+@app.post("/api/cv/profile-refresh")
+async def profile_refresh():
+    return {"task_id": await tasks.enqueue("profile_from_cv", None, {}, priority=10)}
+
+
+class ProfileIn(BaseModel):
+    full_name: str = ""
+    email: str = ""
+    phone: str = ""
+    city: str = ""
+    headline: str = ""
+    summary: str = ""
+    skills: List[str] = []
+    experiences: List[Dict[str, Any]] = []
+    education: List[Dict[str, Any]] = []
+    languages: List[str] = []
+    preferences: Dict[str, Any] = {}
+    target_roles: List[str] = []
+
 
 @app.get("/api/profile")
 async def get_profile():
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT * FROM profile WHERE id = 1")
-        row = await cur.fetchone()
-        profile = dict(row)
-        for f in ["skills", "experiences", "education", "languages", "preferences"]:
-            if isinstance(profile.get(f), str):
-                try:
-                    profile[f] = json.loads(profile[f])
-                except Exception:
-                    pass
-        if profile.get("efficiency_metrics"):
-            try:
-                profile["efficiency_metrics"] = json.loads(profile["efficiency_metrics"])
-            except Exception:
-                profile["efficiency_metrics"] = None
-    return profile
+    return await db.get_profile()
 
-@app.post("/api/profile")
-async def update_profile(payload: ProfileUpdate):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("""
-            UPDATE profile
-            SET full_name = ?,
-                email = ?,
-                phone = ?,
-                city = ?,
-                headline = ?,
-                summary = ?,
-                skills = ?,
-                experiences = ?,
-                education = ?,
-                languages = ?,
-                preferences = ?,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = 1
-        """, (
-            payload.full_name,
-            payload.email,
-            payload.phone,
-            payload.city,
-            payload.headline,
-            payload.summary,
-            json.dumps(payload.skills, ensure_ascii=False),
-            json.dumps(payload.experiences, ensure_ascii=False),
-            json.dumps(payload.education, ensure_ascii=False),
-            json.dumps(payload.languages, ensure_ascii=False),
-            json.dumps(payload.preferences, ensure_ascii=False)
-        ))
-        await db.commit()
-    await log_activity("SUCCESS", "Profil et CV maître mis à jour.")
-    return {"status": "ok"}
 
-@app.get("/api/profile/preview-pdf")
-async def preview_base_cv_pdf():
-    """Generates and serves the original / base master CV as a PDF."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT * FROM profile WHERE id = 1")
-        row = await cur.fetchone()
-        profile = dict(row)
-        for f in ["skills", "experiences", "education", "languages", "preferences"]:
-            if isinstance(profile.get(f), str):
-                try:
-                    profile[f] = json.loads(profile[f])
-                except Exception:
-                    pass
+@app.put("/api/profile")
+async def put_profile(payload: ProfileIn):
+    await db.update("profile", 1, {**payload.model_dump(), "updated_at": db.now_iso()}, touch=False)
+    publish("profile_updated", {})
+    return {"ok": True}
 
-    pdf_path = await cv_renderer.generate_base_cv_pdf(profile)
-    return FileResponse(pdf_path, media_type="application/pdf", content_disposition_type="inline")
 
-@app.get("/api/profile/preview-html")
-async def preview_base_cv_html():
-    """Returns rendered HTML of the master base CV for instant in-app view."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT * FROM profile WHERE id = 1")
-        row = await cur.fetchone()
-        profile = dict(row)
-        for f in ["skills", "experiences", "education", "languages", "preferences"]:
-            if isinstance(profile.get(f), str):
-                try:
-                    profile[f] = json.loads(profile[f])
-                except Exception:
-                    pass
+# ================================================================== follow-ups
 
-    tailored_data = {
-        "tailored_headline": profile.get("headline", "Profil Candidat"),
-        "tailored_summary": profile.get("summary", ""),
-        "highlighted_skills": profile.get("skills", []),
-        "adapted_experiences": profile.get("experiences", [])
-    }
-    html = await cv_renderer.render_cv_html(profile, tailored_data, "CV de Base", "Candidature")
-    return {"html": html}
+@app.get("/api/followups")
+async def list_followups(include_done: bool = False):
+    sql = ("SELECT f.*, j.title, j.company, j.contact_email, j.applied_at, j.status AS job_status, j.url "
+           "FROM followups f JOIN jobs j ON j.id = f.job_id")
+    if not include_done:
+        sql += " WHERE f.status IN ('scheduled', 'manual', 'failed')"
+    sql += " ORDER BY CASE f.status WHEN 'manual' THEN 0 WHEN 'failed' THEN 1 ELSE 2 END, f.due_at"
+    return await db.fetch_all("followups", sql)
 
-@app.post("/api/profile/upload-cv")
-async def upload_imported_cv(file: UploadFile = File(...)):
-    """Uploads an authentic original CV file (PDF), preserving its exact original design and extracting text for AI multi-metric inspection."""
-    filename = file.filename or "cv_original.pdf"
-    clean_filename = f"original_{int(asyncio.get_event_loop().time() * 1000)}_{filename.replace(' ', '_')}"
-    save_path = IMPORTED_CV_DIR / clean_filename
 
-    content = await file.read()
-    with open(save_path, "wb") as f:
-        f.write(content)
+class FollowupPatch(BaseModel):
+    due_at: Optional[str] = None
+    subject: Optional[str] = None
+    body: Optional[str] = None
 
-    # Extract text content using pypdf if PDF
-    extracted_text = ""
-    if filename.lower().endswith(".pdf"):
-        try:
-            reader = PdfReader(str(save_path))
-            for page in reader.pages:
-                extracted_text += page.extract_text() or ""
-        except Exception as e:
-            await log_activity("WARNING", f"Extraction de texte PDF: {e}")
-    else:
-        try:
-            extracted_text = content.decode("utf-8", errors="ignore")
-        except Exception:
-            extracted_text = "CV original importé."
 
-    # Inspect efficiency across the 5 dimensions
-    metrics = await ai_bridge.inspect_cv_efficiency(extracted_text, "Général", "Rouen")
+@app.patch("/api/followups/{fid}")
+async def patch_followup(fid: int, payload: FollowupPatch):
+    await db.update("followups", fid, payload.model_dump(exclude_none=True), touch=False)
+    publish("followups", {})
+    return {"ok": True}
 
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("""
-            UPDATE profile
-            SET original_cv_path = ?,
-                original_cv_filename = ?,
-                original_cv_text = ?,
-                efficiency_metrics = ?,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = 1
-        """, (str(save_path), filename, extracted_text, json.dumps(metrics, ensure_ascii=False)))
-        await db.commit()
 
-    await log_activity("SUCCESS", f"CV original importé avec succès : '{filename}' ! Calcul d'efficacité IA terminé.")
-    await broadcast_ws("profile_updated", {"has_original_cv": True})
-    return {
-        "status": "ok",
-        "filename": filename,
-        "saved_path": str(save_path),
-        "metrics": metrics
-    }
+@app.post("/api/followups/{fid}/send")
+async def send_followup_now(fid: int):
+    try:
+        return await applications.send_followup(fid)
+    except pool.AIUnavailable as e:
+        bad(Exception(f"IA indisponible jusqu'à {e.resume_at:%H:%M}" if e.resume_at else str(e)), 503)
+    except mailer.MailNotConfigured as e:
+        bad(e, 412)
+    except Exception as e:
+        bad(e, 502)
 
-@app.get("/api/profile/original-cv")
-async def get_original_cv():
-    """Serves the authentic uploaded original CV file inline so it does not auto-download."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT original_cv_path, original_cv_filename FROM profile WHERE id = 1")
-        row = await cur.fetchone()
-        if not row or not row["original_cv_path"] or not os.path.exists(row["original_cv_path"]):
-            raise HTTPException(status_code=404, detail="Aucun CV original n'a encore été importé.")
-        
-        path = row["original_cv_path"]
-        media_type = "application/pdf" if path.lower().endswith(".pdf") else "application/octet-stream"
-        return FileResponse(path, media_type=media_type, content_disposition_type="inline")
 
-@app.post("/api/profile/inspect-efficiency")
-async def inspect_cv_efficiency():
-    """Runs or refreshes multi-metric efficiency calculation for the imported CV."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT * FROM profile WHERE id = 1")
-        row = await cur.fetchone()
-        profile = dict(row)
+@app.post("/api/followups/{fid}/draft")
+async def draft_followup(fid: int):
+    try:
+        return await applications.draft_only(fid)
+    except pool.AIUnavailable as e:
+        bad(Exception(f"IA indisponible jusqu'à {e.resume_at:%H:%M}" if e.resume_at else str(e)), 503)
+    except ValueError as e:
+        bad(e)
 
-    text_to_audit = profile.get("original_cv_text") or (
-        f"{profile.get('headline')} {profile.get('summary')} {profile.get('skills')} {profile.get('experiences')}"
-    )
 
-    metrics = await ai_bridge.inspect_cv_efficiency(text_to_audit, profile.get("headline", "Développeur"), profile.get("city", "Rouen"))
+@app.post("/api/followups/{fid}/done")
+async def followup_done(fid: int):
+    await db.update("followups", fid, {"status": "sent", "sent_at": db.now_iso()}, touch=False)
+    publish("followups", {})
+    return {"ok": True}
 
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE profile SET efficiency_metrics = ? WHERE id = 1", (json.dumps(metrics, ensure_ascii=False),))
-        await db.commit()
 
-    return metrics
+@app.delete("/api/followups/{fid}")
+async def cancel_followup(fid: int):
+    await db.update("followups", fid, {"status": "cancelled", "error": "annulée à la main"}, touch=False)
+    publish("followups", {})
+    return {"ok": True}
 
-@app.post("/api/profile/generate-variants")
-async def generate_variants(payload: MetricVariantRequest):
-    """Generates 3 maximum-score variants and compiles visual proposal PDFs for direct preview."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT * FROM profile WHERE id = 1")
-        row = await cur.fetchone()
-        profile = dict(row)
-        for f in ["skills", "experiences", "education", "languages", "preferences"]:
-            if isinstance(profile.get(f), str):
-                try:
-                    profile[f] = json.loads(profile[f])
-                except Exception:
-                    pass
 
-    text = profile.get("original_cv_text") or f"{profile.get('summary')} {profile.get('experiences')}"
-    variants_data = await ai_bridge.generate_metric_variants(payload.metric_id, text, profile.get("headline", "Développeur"))
+@app.post("/api/jobs/{job_id}/followups/reschedule")
+async def reschedule(job_id: int):
+    return {"ids": await applications.schedule_followups(job_id)}
 
-    # For each variant, generate a visual PDF proposal
-    for idx, var in enumerate(variants_data.get("variants", [])):
-        try:
-            pdf_path = await cv_renderer.generate_variant_proposal_pdf(
-                profile, var.get("title", f"Variante {idx+1}"), var.get("content", ""), payload.metric_id
-            )
-            var["pdf_url"] = f"/api/profile/proposal-pdf?file={os.path.basename(pdf_path)}"
-        except Exception as e:
-            var["pdf_url"] = None
 
-    return variants_data
+# ================================================================== AI accounts & queue
 
-@app.get("/api/profile/proposal-pdf")
-async def get_proposal_pdf(file: str):
-    """Serves a visual PDF proposal inline for instant inspection."""
-    path = CVS_DIR / file
-    if not path.exists():
-        raise HTTPException(status_code=404, detail="PDF proposition non trouvé")
-    return FileResponse(str(path), media_type="application/pdf", content_disposition_type="inline")
+@app.get("/api/ai/providers")
+async def providers():
+    return pool.PROVIDERS
 
-@app.post("/api/profile/translate-cv")
-async def translate_cv(payload: Dict[str, Any] = Body(...)):
-    """Translates the profile to English or French, compiles a visual PDF, and returns the result."""
-    target_lang = payload.get("target_language", "en") # "en" or "fr"
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT * FROM profile WHERE id = 1")
-        profile = dict(await cur.fetchone())
-        for f in ["skills", "experiences", "education", "languages", "preferences"]:
-            if isinstance(profile.get(f), str):
-                try:
-                    profile[f] = json.loads(profile[f])
-                except Exception:
-                    pass
 
-    translated_data = await ai_bridge.translate_cv(profile, target_lang)
-    pdf_path = await cv_renderer.generate_translated_cv_pdf(profile, translated_data, target_lang)
-    filename = os.path.basename(pdf_path)
+@app.get("/api/ai/accounts")
+async def ai_accounts():
+    return await pool.pool_status()
 
-    await log_activity("SUCCESS", f"Traduction du CV en {target_lang.upper()} terminée avec PDF visuel.")
-    return {
-        "status": "ok",
-        "target_language": target_lang,
-        "pdf_url": f"/api/profile/translated-pdf?file={filename}",
-        "filename": filename,
-        "translated_data": translated_data
-    }
 
-@app.get("/api/profile/translated-pdf")
-async def get_translated_pdf(file: str):
-    """Serves a translated CV PDF inline."""
-    path = CVS_DIR / file
-    if not path.exists():
-        raise HTTPException(status_code=404, detail="CV traduit non trouvé")
-    return FileResponse(str(path), media_type="application/pdf", content_disposition_type="inline")
+class AccountIn(BaseModel):
+    provider: str
+    label: str = ""
+    auth: str = "default"
+    secret: str = ""
+    model: str = ""
+    priority: int = 100
+    env: Dict[str, str] = {}
 
-# Settings Endpoints
+
+@app.post("/api/ai/accounts")
+async def add_account(payload: AccountIn):
+    try:
+        return await linking.create_account(**payload.model_dump())
+    except ValueError as e:
+        bad(e)
+
+
+class AccountPatch(BaseModel):
+    label: Optional[str] = None
+    enabled: Optional[bool] = None
+    priority: Optional[int] = None
+    model: Optional[str] = None
+    secret: Optional[str] = None
+
+
+@app.patch("/api/ai/accounts/{aid}")
+async def patch_account(aid: int, payload: AccountPatch):
+    values = payload.model_dump(exclude_none=True)
+    if values.get("secret") == "":
+        values.pop("secret")
+    if "secret" in values:
+        values["status"] = "unknown"
+    await db.update("ai_accounts", aid, values, touch=False)
+    a = await db.fetch_one("ai_accounts", "SELECT * FROM ai_accounts WHERE id = ?", (aid,))
+    publish("ai_account", pool.public_account(a))
+    tasks.wake()
+    return pool.public_account(a)
+
+
+@app.delete("/api/ai/accounts/{aid}")
+async def delete_account(aid: int):
+    await db.execute("DELETE FROM ai_accounts WHERE id = ?", (aid,))
+    publish("ai_account", {"id": aid, "deleted": True})
+    return {"ok": True}
+
+
+@app.post("/api/ai/accounts/{aid}/test")
+async def test_account(aid: int):
+    res = await linking.test_account(aid)
+    tasks.wake()
+    return res
+
+
+@app.post("/api/ai/accounts/{aid}/check")
+async def check_account(aid: int):
+    try:
+        res = await linking.check_login(aid)
+    except ValueError as e:
+        bad(e)
+    tasks.wake()
+    return res
+
+
+@app.post("/api/ai/accounts/{aid}/clear-limit")
+async def clear_limit(aid: int):
+    await db.update("ai_accounts", aid, {"status": "unknown", "limited_until": None, "consecutive_errors": 0}, touch=False)
+    await db.execute("UPDATE ai_tasks SET run_after = NULL WHERE status = 'queued'")
+    tasks.wake()
+    a = await db.fetch_one("ai_accounts", "SELECT * FROM ai_accounts WHERE id = ?", (aid,))
+    publish("ai_account", pool.public_account(a))
+    return {"ok": True}
+
+
+@app.post("/api/ai/accounts/{aid}/login")
+async def device_login(aid: int):
+    try:
+        return await linking.start_device_login(aid)
+    except ValueError as e:
+        bad(e)
+
+
+@app.get("/api/ai/accounts/{aid}/login")
+async def device_login_state(aid: int):
+    return linking.device_login_state(aid)
+
+
+@app.get("/api/tasks")
+async def list_tasks():
+    return await tasks.queue_summary()
+
+
+@app.get("/api/tasks/{tid}")
+async def get_task(tid: int):
+    t = await tasks.get_task(tid)
+    if not t:
+        raise HTTPException(404, "Tâche introuvable")
+    return t
+
+
+@app.post("/api/tasks/{tid}/cancel")
+async def cancel_task(tid: int):
+    await tasks.cancel(tid)
+    return {"ok": True}
+
+
+@app.post("/api/tasks/{tid}/retry")
+async def retry_task(tid: int):
+    await tasks.retry(tid)
+    return {"ok": True}
+
+
+# ================================================================== settings
+
+SECRET_KEYS = {"gmail_app_password"}
+HIDDEN_KEYS = {"imap_seen", "source_credentials"}
+
 
 @app.get("/api/settings")
 async def get_settings():
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT * FROM settings WHERE id = 1")
-        settings = dict(await cur.fetchone())
-        # Mask password
-        if settings.get("gmail_app_password"):
-            settings["gmail_app_password_set"] = True
-            settings["gmail_app_password"] = "••••••••••••••••"
-        else:
-            settings["gmail_app_password_set"] = False
-        settings["wait_for_batch_validation"] = bool(settings.get("wait_for_batch_validation", 0))
-    return settings
+    s = await db.get_settings()
+    out = {k: v for k, v in s.items() if k not in HIDDEN_KEYS}
+    for k in SECRET_KEYS:
+        out[k + "_set"] = bool(s.get(k))
+        out[k] = ""
+    return out
 
-@app.post("/api/settings")
-async def update_settings(payload: SettingsUpdate):
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute("SELECT * FROM settings WHERE id = 1")
-        current = dict(await cur.fetchone())
 
-        is_auto = payload.is_autopilot_enabled if payload.is_autopilot_enabled is not None else current["is_autopilot_enabled"]
-        is_pause = payload.is_paused if payload.is_paused is not None else current["is_paused"]
-        threshold = payload.match_score_threshold if payload.match_score_threshold is not None else current["match_score_threshold"]
-        limit = payload.daily_application_limit if payload.daily_application_limit is not None else current["daily_application_limit"]
-        gmail_addr = payload.gmail_address if payload.gmail_address is not None else current["gmail_address"]
-        provider = payload.ai_provider if payload.ai_provider is not None else current.get("ai_provider", "agy")
-        batch_val = payload.wait_for_batch_validation if payload.wait_for_batch_validation is not None else bool(current.get("wait_for_batch_validation", 0))
-        anthropic_key = payload.anthropic_api_key if payload.anthropic_api_key is not None else current.get("anthropic_api_key", "")
+@app.put("/api/settings")
+async def put_settings(payload: Dict[str, Any] = Body(...)):
+    allowed = set(db.DEFAULT_SETTINGS) | {"auto_search", "auto_score"}
+    values = {k: v for k, v in payload.items() if k in allowed and k not in HIDDEN_KEYS}
+    for k in SECRET_KEYS:
+        if not values.get(k):
+            values.pop(k, None)
+    await db.set_settings(values)
+    if "paused" in values or "autopilot_enabled" in values:
+        tasks.wake()
+    publish("settings", {k: v for k, v in values.items() if k not in SECRET_KEYS})
+    publish("status", await scheduler.status())
+    return {"ok": True}
 
-        # Only update password if provided and not masked
-        gmail_pw = current["gmail_app_password"]
-        if payload.gmail_app_password and "•" not in payload.gmail_app_password:
-            gmail_pw = payload.gmail_app_password
 
-        await db.execute("""
-            UPDATE settings
-            SET is_autopilot_enabled = ?,
-                is_paused = ?,
-                match_score_threshold = ?,
-                daily_application_limit = ?,
-                gmail_address = ?,
-                gmail_app_password = ?,
-                ai_provider = ?,
-                wait_for_batch_validation = ?,
-                anthropic_api_key = ?
-            WHERE id = 1
-        """, (int(is_auto), int(is_pause), threshold, limit, gmail_addr, gmail_pw, provider, int(batch_val), anthropic_key))
-        await db.commit()
+@app.post("/api/settings/email-test")
+async def email_test():
+    return await mailer.test_connection()
 
-    await log_activity("INFO", f"Paramètres mis à jour (Moteur IA: {provider}, Validation par lot: {'Oui' if batch_val else 'Non'}).")
-    await broadcast_ws("settings_updated", {"ai_provider": provider, "wait_for_batch_validation": batch_val})
-    return {"status": "ok"}
 
-@app.post("/api/settings/toggle-batch-validation")
-async def toggle_batch_validation():
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute("SELECT wait_for_batch_validation FROM settings WHERE id = 1")
-        current = (await cur.fetchone())[0] or 0
-        new_val = 0 if current == 1 else 1
-        await db.execute("UPDATE settings SET wait_for_batch_validation = ? WHERE id = 1", (new_val,))
-        await db.commit()
-    msg = "Validation par lot ACTIVÉE" if new_val == 1 else "Validation par lot DÉSACTIVÉE (envois immédiats)"
-    await log_activity("INFO", msg)
-    await broadcast_ws("settings_updated", {"wait_for_batch_validation": bool(new_val)})
-    return {"status": "ok", "wait_for_batch_validation": bool(new_val)}
+# ================================================================== frontend (built)
 
-@app.post("/api/settings/set-provider")
-async def set_ai_provider(provider: str):
-    if provider not in ["agy", "claude", "codex"]:
-        raise HTTPException(status_code=400, detail="Fournisseur invalide")
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE settings SET ai_provider = ? WHERE id = 1", (provider,))
-        await db.commit()
-    await log_activity("SUCCESS", f"Moteur d'intelligence artificielle configuré sur : {provider.upper()}")
-    await broadcast_ws("settings_updated", {"ai_provider": provider})
-    return {"status": "ok", "ai_provider": provider}
-
-@app.post("/api/settings/toggle-autopilot")
-async def toggle_autopilot():
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute("SELECT is_autopilot_enabled FROM settings WHERE id = 1")
-        current = (await cur.fetchone())[0]
-        new_val = 0 if current == 1 else 1
-        await db.execute("UPDATE settings SET is_autopilot_enabled = ? WHERE id = 1", (new_val,))
-        await db.commit()
-    state_str = "ACTIVÉ" if new_val == 1 else "DÉSACTIVÉ"
-    await log_activity("INFO", f"Pilote automatique {state_str}.")
-    await broadcast_ws("settings_updated", {"is_autopilot_enabled": bool(new_val)})
-    return {"status": "ok", "is_autopilot_enabled": bool(new_val)}
-
-@app.post("/api/settings/toggle-pause")
-async def toggle_pause():
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute("SELECT is_paused FROM settings WHERE id = 1")
-        current = (await cur.fetchone())[0]
-        new_val = 0 if current == 1 else 1
-        await db.execute("UPDATE settings SET is_paused = ? WHERE id = 1", (new_val,))
-        await db.commit()
-    state_str = "EN PAUSE" if new_val == 1 else "REPRIS"
-    await log_activity("WARNING" if new_val == 1 else "INFO", f"Système {state_str}.")
-    await broadcast_ws("settings_updated", {"is_paused": bool(new_val)})
-    return {"status": "ok", "is_paused": bool(new_val)}
-
-@app.post("/api/email/test-connection")
-async def test_email():
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT gmail_address, gmail_app_password FROM settings WHERE id = 1")
-        s = dict(await cur.fetchone())
-
-    user = s.get("gmail_address", "").strip()
-    pw = s.get("gmail_app_password", "").strip()
-    if not user or not pw:
-        return {"status": "warning", "message": "Identifiants Gmail non renseignés. Le système fonctionne en mode simulation."}
-
-    try:
-        import imaplib
-        mail = imaplib.IMAP4_SSL("imap.gmail.com", 993, timeout=10)
-        mail.login(user, pw)
-        mail.logout()
-        return {"status": "success", "message": "Connexion IMAP & SMTP Gmail réussie !"}
-    except Exception as e:
-        return {"status": "error", "message": f"Erreur d'authentification Gmail: {str(e)}"}
-
-@app.get("/api/logs")
-async def get_logs(limit: int = 50):
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT * FROM logs ORDER BY id DESC LIMIT ?", (limit,))
-        logs = [dict(r) for r in await cur.fetchall()]
-    return logs
-
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
-    connected_clients.append(websocket)
-    try:
-        while True:
-            await websocket.receive_text()
-    except WebSocketDisconnect:
-        if websocket in connected_clients:
-            connected_clients.remove(websocket)
+DIST = BASE_DIR.parent / "frontend" / "dist"
+if DIST.exists():
+    app.mount("/", StaticFiles(directory=str(DIST), html=True), name="ui")

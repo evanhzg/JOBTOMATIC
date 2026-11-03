@@ -1,345 +1,154 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  Job, 
-  JobStatus, 
-  SystemStats, 
-  SearchQuery, 
-  CandidateProfile, 
-  SystemSettings, 
-  ActivityLog,
-  CVImprovementSuggestions
-} from './types';
-import { Language } from './i18n';
-import * as api from './api';
-import { ControlBar } from './components/ControlBar';
-import { KanbanBoard } from './components/KanbanBoard';
-import { SearchTab } from './components/SearchTab';
-import { ProfileTab } from './components/ProfileTab';
-import { SettingsTab } from './components/SettingsTab';
-import { LiveConsole } from './components/LiveConsole';
-import { JobDetailModal } from './components/JobDetailModal';
-import { CVPreviewModal } from './components/CVPreviewModal';
+import { useEffect, useState } from "react";
+import { api, Status } from "./lib/api";
+import { useConnected, useLive } from "./lib/live";
+import { clock, countdown, useTick } from "./lib/format";
+import { Logo, ToastProvider, Toggle, useAction } from "./components/ui";
+import Board from "./pages/Board";
+import Offers from "./pages/Offers";
+import CvStudio from "./pages/CvStudio";
+import Searches from "./pages/Searches";
+import Followups from "./pages/Followups";
+import AiAccounts from "./pages/AiAccounts";
+import SettingsPage from "./pages/Settings";
+import JobDetail from "./pages/JobDetail";
 
-export const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'kanban' | 'search' | 'profile' | 'settings' | 'console'>('kanban');
-  const [stats, setStats] = useState<SystemStats | null>(null);
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [queries, setQueries] = useState<SearchQuery[]>([]);
-  const [profile, setProfile] = useState<CandidateProfile | null>(null);
-  const [settings, setSettings] = useState<SystemSettings | null>(null);
-  const [logs, setLogs] = useState<ActivityLog[]>([]);
-  
-  // Modals state
-  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
-  const [cvPreviewTarget, setCvPreviewTarget] = useState<{ job?: Job; isBase?: boolean } | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [currentLang, setCurrentLang] = useState<Language>('fr');
+const TABS = [
+  { id: "tableau", label: "Tableau" },
+  { id: "offres", label: "Offres" },
+  { id: "cv", label: "CV" },
+  { id: "recherches", label: "Recherches" },
+  { id: "relances", label: "Relances" },
+  { id: "ia", label: "IA & comptes" },
+  { id: "reglages", label: "Réglages" },
+] as const;
+type TabId = (typeof TABS)[number]["id"];
 
-  const handleToggleLang = () => setCurrentLang(prev => prev === 'fr' ? 'en' : 'fr');
-
-  const loadData = useCallback(async () => {
-    try {
-      const [s, j, q, p, st, l] = await Promise.all([
-        api.fetchStats(),
-        api.fetchJobs(),
-        api.fetchSearchQueries(),
-        api.fetchProfile(),
-        api.fetchSettings(),
-        api.fetchLogs()
-      ]);
-      setStats(s);
-      setJobs(j);
-      setQueries(q);
-      setProfile(p);
-      setSettings(st);
-      setLogs(l);
-
-      // Refresh opened modals if any
-      if (selectedJob) {
-        const updated = j.find((x: Job) => x.id === selectedJob.id);
-        if (updated) setSelectedJob(updated);
-      }
-      if (cvPreviewTarget?.job) {
-        const updatedCV = j.find((x: Job) => x.id === cvPreviewTarget.job!.id);
-        if (updatedCV) setCvPreviewTarget({ job: updatedCV });
-      }
-    } catch (err) {
-      console.error('Error loading data:', err);
-    }
-  }, [selectedJob, cvPreviewTarget]);
-
-  // Initial load & Polling interval
+function useHashState(): [TabId, number | null, (t: TabId, job?: number | null) => void] {
+  const read = () => {
+    const [t, j] = location.hash.replace("#", "").split("/");
+    const tab = (TABS.find((x) => x.id === t)?.id ?? "tableau") as TabId;
+    return [tab, j ? Number(j) : null] as const;
+  };
+  const [state, setState] = useState(read);
   useEffect(() => {
-    loadData();
-    const interval = setInterval(loadData, 8000);
-    return () => clearInterval(interval);
-  }, [loadData]);
-
-  // WebSocket Live Updates
-  useEffect(() => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
-    const socket = new WebSocket(wsUrl);
-
-    socket.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        if (
-          payload.type === 'job_updated' || 
-          payload.type === 'job_deleted' || 
-          payload.type === 'settings_updated' ||
-          payload.type === 'jobs_batch_applied'
-        ) {
-          loadData();
-        }
-      } catch (e) {
-        console.error('WebSocket parse error:', e);
-      }
-    };
-
-    return () => {
-      socket.close();
-    };
-  }, [loadData]);
-
-  const handleToggleAutopilot = async () => {
-    setIsLoading(true);
-    try {
-      await api.toggleAutopilot();
-      await loadData();
-    } finally {
-      setIsLoading(false);
-    }
+    const h = () => setState(read());
+    window.addEventListener("hashchange", h);
+    return () => window.removeEventListener("hashchange", h);
+  }, []);
+  const go = (t: TabId, job: number | null = null) => {
+    location.hash = job ? `${t}/${job}` : t;
   };
+  return [state[0], state[1], go];
+}
 
-  const handleTogglePause = async () => {
-    setIsLoading(true);
-    try {
-      await api.togglePause();
-      await loadData();
-    } finally {
-      setIsLoading(false);
-    }
-  };
+export default function App() {
+  return (
+    <ToastProvider>
+      <Shell />
+    </ToastProvider>
+  );
+}
 
-  const handleToggleBatchValidation = async () => {
-    setIsLoading(true);
-    try {
-      await api.toggleBatchValidation();
-      await loadData();
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleSelectProvider = async (p: 'agy' | 'claude' | 'codex') => {
-    setIsLoading(true);
-    try {
-      await api.setAiProvider(p);
-      await loadData();
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleApplyJob = async (jobId: number) => {
-    try {
-      await api.applyJob(jobId);
-      await loadData();
-    } catch (err) {
-      console.error('Error applying to job:', err);
-    }
-  };
-
-  const handleTailorJob = async (jobId: number) => {
-    try {
-      await api.tailorJob(jobId);
-      await loadData();
-    } catch (err) {
-      console.error('Error tailoring CV:', err);
-    }
-  };
-
-  const handleBatchValidate = async () => {
-    setIsLoading(true);
-    try {
-      await api.batchValidate();
-      await loadData();
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleSimulateReply = async (jobId: number) => {
-    try {
-      await api.simulateReply(jobId);
-      await loadData();
-    } catch (err) {
-      console.error('Error simulating reply:', err);
-    }
-  };
-
-  const handleMoveStatus = async (jobId: number, newStatus: JobStatus) => {
-    try {
-      await api.updateJobStatus(jobId, newStatus);
-      await loadData();
-    } catch (err) {
-      console.error('Error updating status:', err);
-    }
-  };
-
-  const handleImproveCV = async (jobId: number): Promise<CVImprovementSuggestions> => {
-    const res = await api.improveJobCV(jobId);
-    await loadData();
-    return res.improvements;
-  };
-
-  const handleApplyImprovements = async (jobId: number) => {
-    await api.applyImprovements(jobId);
-    await loadData();
-  };
-
-  const handleAddQuery = async (newQuery: {
-    query_text: string;
-    location: string;
-    radius_km: number;
-    contract_types: string[];
-    platforms: string[];
-  }) => {
-    await api.addSearchQuery(newQuery);
-    await loadData();
-  };
-
-  const handleDeleteQuery = async (id: number) => {
-    await api.deleteSearchQuery(id);
-    await loadData();
-  };
-
-  const handleRunSearchNow = async () => {
-    setIsLoading(true);
-    try {
-      await api.runSearchNow();
-      setTimeout(loadData, 2000);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleSaveProfile = async (p: CandidateProfile) => {
-    setIsLoading(true);
-    try {
-      await api.updateProfile(p);
-      await loadData();
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleSaveSettings = async (st: Partial<SystemSettings>) => {
-    setIsLoading(true);
-    try {
-      await api.updateSettings(st);
-      await loadData();
-    } finally {
-      setIsLoading(false);
-    }
-  };
+function Shell() {
+  const [tab, jobId, go] = useHashState();
+  const { data: status, reload } = useLive<Status>("/status", ["status", "ai_pool", "ai_account", "task", "ai_waiting", "settings", "followups"], 30000);
+  const openJob = (id: number) => go(tab, id);
 
   return (
-    <div className="min-h-screen bg-[#F4F4F0] text-[#18181B] flex flex-col font-sans selection:bg-[#5F7A48] selection:text-white">
-      {/* Pickles.app Style Header & Control Bar */}
-      <ControlBar
-        stats={stats}
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        onToggleAutopilot={handleToggleAutopilot}
-        onTogglePause={handleTogglePause}
-        onToggleBatchValidation={handleToggleBatchValidation}
-        onSelectProvider={handleSelectProvider}
-        isLoading={isLoading}
-        currentLang={currentLang}
-        onToggleLang={handleToggleLang}
-      />
-
-      {/* Main Container */}
-      <main className="flex-1 max-w-[1600px] w-full mx-auto px-3 sm:px-5 py-3.5">
-        {activeTab === 'kanban' && (
-          <KanbanBoard
-            jobs={jobs}
-            waitBatchValidation={stats?.wait_for_batch_validation ?? false}
-            onOpenDetails={(job) => setSelectedJob(job)}
-            onPreviewCV={(job) => setCvPreviewTarget({ job })}
-            onImproveCV={(job) => setCvPreviewTarget({ job })}
-            onApply={handleApplyJob}
-            onTailor={handleTailorJob}
-            onSimulateReply={handleSimulateReply}
-            onMoveStatus={handleMoveStatus}
-            onBatchValidate={handleBatchValidate}
-            currentLang={currentLang}
-          />
-        )}
-
-        {activeTab === 'search' && (
-          <SearchTab
-            queries={queries}
-            onAddQuery={handleAddQuery}
-            onDeleteQuery={handleDeleteQuery}
-            onRunSearchNow={handleRunSearchNow}
-            isLoading={isLoading}
-            currentLang={currentLang}
-          />
-        )}
-
-        {activeTab === 'profile' && (
-          <ProfileTab
-            profile={profile}
-            onSaveProfile={handleSaveProfile}
-            isLoading={isLoading}
-            currentLang={currentLang}
-          />
-        )}
-
-        {activeTab === 'settings' && (
-          <SettingsTab
-            settings={settings}
-            onSaveSettings={handleSaveSettings}
-            isLoading={isLoading}
-          />
-        )}
-
-        {activeTab === 'console' && (
-          <LiveConsole
-            logs={logs}
-            onRefresh={loadData}
-            isLoading={isLoading}
-          />
-        )}
-      </main>
-
-      {/* Detailed Modal */}
-      {selectedJob && (
-        <JobDetailModal
-          job={selectedJob}
-          onClose={() => setSelectedJob(null)}
-          onApply={handleApplyJob}
-          onTailor={handleTailorJob}
-        />
-      )}
-
-      {/* Dedicated CV Preview & AI Improvement Modal */}
-      {cvPreviewTarget && (
-        <CVPreviewModal
-          job={cvPreviewTarget.job}
-          baseProfile={profile}
-          onClose={() => setCvPreviewTarget(null)}
-          onImproveCV={handleImproveCV}
-          onApplyImprovements={handleApplyImprovements}
-          onEditBaseProfile={() => setActiveTab('profile')}
-          currentLang={currentLang}
-        />
-      )}
+    <div className="mx-auto max-w-[1500px] px-3 pb-10 pt-3 sm:px-6 sm:pt-6">
+      <div className="frame bg-paper/60">
+        <Masthead status={status} reload={reload} go={go} />
+        <nav className="grid grid-cols-4 gap-[1.5px] border-b-[1.5px] border-ink bg-ink sm:grid-cols-7">
+          {TABS.map((t, i) => (
+            <button key={t.id} onClick={() => go(t.id)}
+              className={`px-1 py-3 font-mono text-[11px] font-bold uppercase tracking-[0.04em] transition-colors sm:text-[12.5px] sm:tracking-[0.06em]
+                ${i === TABS.length - 1 ? "max-sm:col-span-2" : ""}
+                ${tab === t.id ? "bg-ink text-cream" : "bg-paper hover:bg-wash"}`}>
+              {t.label}
+              {t.id === "relances" && status && status.followups_manual > 0 && (
+                <span className="ml-1.5 bg-navy px-1 text-cream">{status.followups_manual}</span>
+              )}
+            </button>
+          ))}
+        </nav>
+        <main className="p-4 sm:p-7">
+          {tab === "tableau" && <Board status={status} openJob={openJob} go={go} />}
+          {tab === "offres" && <Offers openJob={openJob} />}
+          {tab === "cv" && <CvStudio />}
+          {tab === "recherches" && <Searches />}
+          {tab === "relances" && <Followups openJob={openJob} />}
+          {tab === "ia" && <AiAccounts />}
+          {tab === "reglages" && <SettingsPage />}
+        </main>
+        <footer className="grid border-t-[1.5px] border-ink font-mono text-[11px] uppercase sm:grid-cols-3">
+          <div className="px-4 py-2.5">Plonge — chasse d'emploi automatique</div>
+          <div className="border-ink px-4 py-2.5 sm:border-l-[1.5px]">Le CV garde son design · l'IA n'invente rien</div>
+          <div className="border-ink px-4 py-2.5 sm:border-l-[1.5px]">Données locales · {new Date().getFullYear()}</div>
+        </footer>
+      </div>
+      <JobDetail jobId={jobId} onClose={() => go(tab)} />
     </div>
   );
-};
+}
 
-export default App;
+function Masthead({ status, reload, go }: { status: Status | null; reload: () => void; go: (t: TabId) => void }) {
+  useTick(1000);
+  const connected = useConnected();
+  const { run } = useAction();
+  const today = new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const set = (values: Record<string, unknown>) => run("set", async () => {
+    await api("/settings", { method: "PUT", body: values });
+    reload();
+  });
+  const ai = status?.ai;
+  const waiting = ai?.state === "waiting" || !!status?.queue.waiting_until;
+  const resume = ai?.resume_at || status?.queue.waiting_until;
+
+  return (
+    <header className="grid border-b-[1.5px] border-ink lg:grid-cols-[220px_1fr_300px]">
+      <div className="flex items-center justify-center border-ink p-4 max-lg:hidden lg:border-r-[1.5px]">
+        <Logo size={128} />
+      </div>
+      <div className="flex flex-col items-center justify-center px-4 py-5 text-center">
+        <div className="kicker flex items-center gap-2">
+          <Logo size={26} className="lg:hidden" />
+          {today}
+          <span title={connected ? "Connecté en direct" : "Reconnexion…"} className={`inline-block h-2 w-2 ${connected ? "bg-navy" : "bg-alert animate-pulse"}`} />
+        </div>
+        <h1 className="mt-1 font-mono text-[clamp(52px,9vw,104px)] font-bold leading-none tracking-[0.12em]">PLONGE</h1>
+        <div className="mt-2 font-mono text-[clamp(13px,1.6vw,19px)] font-bold uppercase tracking-[0.08em]">Candidatures fraîches, CV sur mesure</div>
+      </div>
+      <div className="grid grid-rows-[auto_auto_1fr] border-t-[1.5px] border-ink text-[13px] lg:border-l-[1.5px] lg:border-t-0">
+        <div className="flex items-center justify-between gap-2 px-4 py-2.5">
+          <Toggle on={!!status?.autopilot} onChange={(v) => set({ autopilot_enabled: v })} label="Pilote auto" />
+          <button className={status?.paused ? "btn-navy btn-sm" : "btn btn-sm"} onClick={() => set({ paused: !status?.paused })}>
+            {status?.paused ? "Reprendre" : "Pause"}
+          </button>
+        </div>
+        <button onClick={() => go("ia")} className={`border-t-[1.5px] border-ink px-4 py-2 text-left ${waiting ? "bg-navy text-cream" : "hover:bg-wash"}`}>
+          <div className="label">IA · {ai ? `${ai.available}/${ai.total} comptes dispo` : "…"}</div>
+          <div className="font-mono text-[12px]">
+            {!ai ? "…" : waiting && resume ? `Limite atteinte · reprise auto dans ${countdown(resume)}`
+              : ai.state === "down" ? "Aucun compte utilisable" : status?.queue.running ? `En cours : ${status.queue.running.label}`
+              : (status?.queue.counts.queued ?? 0) > 0 ? `${status?.queue.counts.queued} tâche(s) en file` : "Prête"}
+          </div>
+        </button>
+        <div className="space-y-1 border-t-[1.5px] border-ink px-4 py-2">
+          <Row k="Prochaine recherche" v={status?.searches_running.length ? "en cours…" : status?.next_search_at ? clock(status.next_search_at) : "—"} />
+          <Row k="Prochaine relance" v={status?.next_followup_at ? clock(status.next_followup_at) : "—"} />
+          <Row k="Envois aujourd'hui" v={status ? `${status.applications_today}/${status.daily_limit}` : "—"} />
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function Row({ k, v }: { k: string; v: string }) {
+  return (
+    <div className="leader text-[11.5px]">
+      <span>{k}</span>
+      <span className="dots" />
+      <span className="font-bold">{v}</span>
+    </div>
+  );
+}

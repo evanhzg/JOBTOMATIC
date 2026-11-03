@@ -46,3 +46,11 @@ yarn-error.log*
 *.swo
 .DS_Store
 Thumbs.db
+
+# Worktrees & tooling
+.claude/
+backend/.pytest_cache/
+backend/storage/fonts/
+backend/data/accounts/
+backend/venv
+frontend/node_modules
